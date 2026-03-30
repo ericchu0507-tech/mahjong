@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>麻將牌預覽</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { overflow: auto; background: #1b5e20; padding: 16px; }
+    h2 { color: #ffcc02; margin: 16px 0 8px; font-size: 14px; letter-spacing: 2px; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; align-items: flex-end; }
+    .section { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+    .label { font-size: 10px; color: rgba(255,255,255,0.5); text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div id="preview"></div>
+<script src="js/tiles.js"></script>
+<script>
+const preview = document.getElementById('preview');
+
+function section(title, tiles) {
+  const div = document.createElement('div');
+  div.classList.add('section');
+  div.innerHTML = `<h2>${title}</h2>`;
+  const row = document.createElement('div');
+  row.classList.add('row');
+  tiles.forEach(t => {
+    const wrap = document.createElement('div');
+    wrap.style.textAlign = 'center';
+    const el = createTileElement(t, false, false);
+    el.style.cursor = 'default';
+    wrap.appendChild(el);
+    const lbl = document.createElement('div');
+    lbl.classList.add('label');
+    lbl.textContent = t.label;
+    wrap.appendChild(lbl);
+    row.appendChild(wrap);
+  });
+  div.appendChild(row);
+  return div;
+}
+
+const deck = createDeck();
+// 取每種牌的第一張（去重）
+const seen = new Set();
+const unique = deck.filter(t => {
+  const key = t.suit + '-' + t.value;
+  if (seen.has(key)) return false;
+  seen.add(key); return true;
+});
+
+const wan    = unique.filter(t => t.suit === 'wan');
+const tiao   = unique.filter(t => t.suit === 'tiao');
+const tong   = unique.filter(t => t.suit === 'tong');
+const zi     = unique.filter(t => t.suit === 'zi');
+const flower = unique.filter(t => t.suit === 'flower');
+
+preview.appendChild(section('萬子 (wan)', wan));
+preview.appendChild(section('條子 (tiao)', tiao));
+preview.appendChild(section('筒子 (tong)', tong));
+preview.appendChild(section('字牌 (zi)', zi));
+preview.appendChild(section('花牌 (flower)', flower));
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:blog.pinkoi.com)",
+      "Bash(npm --version)",
+      "Bash(cmd.exe /c \"node --version && npm --version\")"
+    ]
+  }
+}

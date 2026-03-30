@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台灣麻將</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="game-container">
+
+  <!-- 頂部玩家（對家） -->
+  <div class="player-area player-top">
+    <div class="player-info">
+      <div class="avatar">🀄</div>
+      <div class="player-name" id="name-1">玩家2</div>
+      <div class="player-score" id="score-1">$1000</div>
+      <div class="wind-badge" id="wind-1">?</div>
+    </div>
+    <div class="hand-row">
+      <div class="other-melds melds-top" id="melds-top"></div>
+      <div class="hand hand-top" id="hand-top"></div>
+    </div>
+    <div class="flower-area" id="flowers-top"></div>
+  </div>
+
+  <!-- 中間區域 -->
+  <div class="middle-row">
+
+    <!-- 左側玩家（player 3） -->
+    <div class="player-area player-left">
+      <div class="player-info vertical">
+        <div class="avatar">🀄</div>
+        <div class="player-name" id="name-3">玩家4</div>
+        <div class="player-score" id="score-3">$1000</div>
+        <div class="wind-badge" id="wind-3">?</div>
+      </div>
+      <div class="hand hand-left" id="hand-left"></div>
+      <div class="other-melds melds-left" id="melds-left"></div>
+      <div class="flower-area" id="flowers-left"></div>
+    </div>
+
+    <!-- 中央牌桌 -->
+    <div class="center-area">
+
+      <!-- 牌牆（包圍中央） -->
+      <div class="tile-wall-frame">
+        <div class="wall-row wall-top-row" id="wall-top"></div>
+        <div class="wall-sides">
+          <div class="wall-col wall-left-col" id="wall-left"></div>
+
+          <!-- 中央遊戲區域 -->
+          <div class="play-zone">
+            <!-- 風向圓盤 -->
+            <div class="wind-disc">
+              <div class="wind-center" id="round-wind">東</div>
+              <div class="wind-label wind-n">北</div>
+              <div class="wind-label wind-s">南</div>
+              <div class="wind-label wind-w">西</div>
+              <div class="wind-label wind-e">東</div>
+            </div>
+
+            <!-- 棄牌區：四方向分開 -->
+            <div class="discard-area">
+              <div class="discard-zone discard-top">
+                <div class="discard-label">對家</div>
+                <div class="discard-tiles" id="discard-tiles-1"></div>
+              </div>
+              <div class="discard-middle-row">
+                <div class="discard-zone discard-left">
+                  <div class="discard-label">上家</div>
+                  <div class="discard-tiles" id="discard-tiles-3"></div>
+                </div>
+                <div class="discard-center-space"></div>
+                <div class="discard-zone discard-right">
+                  <div class="discard-label">下家</div>
+                  <div class="discard-tiles" id="discard-tiles-2"></div>
+                </div>
+              </div>
+              <div class="discard-zone discard-bottom">
+                <div class="discard-label">自己</div>
+                <div class="discard-tiles" id="discard-tiles-0"></div>
+              </div>
+            </div>
+
+            <!-- 計時器 + Time Bank -->
+            <div class="timer-row">
+              <div class="timer-wrap">
+                <svg class="timer-svg" viewBox="0 0 36 36">
+                  <circle class="timer-bg" cx="18" cy="18" r="15"/>
+                  <circle class="timer-ring" id="timer-ring" cx="18" cy="18" r="15"/>
+                </svg>
+                <span class="timer-num" id="timer-num"></span>
+              </div>
+              <button class="btn-timebank" id="btn-timebank" disabled>
+                ⏳ <span id="timebank-count">3</span>
+              </button>
+            </div>
+
+            <!-- 動作提示 -->
+            <div class="action-hint" id="action-hint">等待開始...</div>
+          </div>
+
+          <div class="wall-col wall-right-col" id="wall-right"></div>
+        </div>
+        <div class="wall-row wall-bottom-row" id="wall-bottom"></div>
+      </div>
+
+    </div>
+
+    <!-- 右側玩家（player 2） -->
+    <div class="player-area player-right">
+      <div class="player-info vertical">
+        <div class="avatar">🀄</div>
+        <div class="player-name" id="name-2">玩家3</div>
+        <div class="player-score" id="score-2">$1000</div>
+        <div class="wind-badge" id="wind-2">?</div>
+      </div>
+      <div class="other-melds melds-right" id="melds-right"></div>
+      <div class="hand hand-right" id="hand-right"></div>
+      <div class="flower-area" id="flowers-right"></div>
+    </div>
+
+  </div><!-- end middle-row -->
+
+  <!-- 底部玩家（自己，player 0） -->
+  <div class="player-area player-bottom">
+    <div class="player-info">
+      <div class="avatar">😀</div>
+      <div class="player-name" id="name-0">你</div>
+      <div class="player-score" id="score-0">$1000</div>
+      <div class="wind-badge" id="wind-0">?</div>
+    </div>
+
+    <!-- 吃碰槓胡按鈕 -->
+    <div class="action-buttons">
+      <button class="btn btn-chi"   id="btn-chi"   disabled>吃</button>
+      <button class="btn btn-peng"  id="btn-peng"  disabled>碰</button>
+      <button class="btn btn-gang"  id="btn-gang"  disabled>槓</button>
+      <button class="btn btn-hu"    id="btn-hu"    disabled>胡</button>
+      <button class="btn btn-pass"  id="btn-pass"  disabled>過</button>
+      <button class="btn btn-ting"  id="btn-ting"  disabled>聽</button>
+    </div>
+
+    <!-- 自己的手牌 + 面子（左）+ 花牌（右） -->
+    <div class="hand-row">
+      <div class="flower-area" id="flowers-bottom"></div>
+      <div class="my-melds" id="my-melds"></div>
+      <div class="hand hand-bottom" id="my-hand"></div>
+    </div>
+  </div>
+
+</div><!-- end game-container -->
+
+<!-- 吃牌選擇 overlay -->
+<div id="chi-select-overlay" style="display:none;">
+  <div class="chi-select-panel">
+    <div class="chi-select-title">選擇吃法</div>
+    <div id="chi-select-options"></div>
+    <button class="btn btn-pass" id="btn-chi-cancel" style="margin-top:10px;">取消</button>
+  </div>
+</div>
+
+<!-- 胡牌 overlay -->
+<div id="win-overlay" style="display:none;">
+  <div class="win-panel">
+    <div class="win-title" id="win-title">🎉 胡牌！</div>
+    <div class="win-detail" id="win-detail"></div>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn-start" id="btn-continue-game">繼續下一局</button>
+      <button class="btn-start" id="btn-play-again" style="background:linear-gradient(135deg,#546e7a,#37474f);color:#fff;">回主選單</button>
+    </div>
+  </div>
+</div>
+
+<!-- 開始遊戲覆蓋層 -->
+<div id="start-overlay">
+  <div class="start-panel">
+    <h1>🀄 台灣麻將</h1>
+    <p>四人連線麻將遊戲</p>
+    <button class="btn-start" id="btn-start-game">開始遊戲</button>
+    <div class="settings">
+      <label>底注（美金）：
+        <select id="base-bet">
+          <option value="1">$1 / 台</option>
+          <option value="5">$5 / 台</option>
+          <option value="10">$10 / 台</option>
+        </select>
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- 抽風覆蓋層 -->
+<div id="wind-overlay" style="display:none;">
+  <div class="wind-panel">
+    <h2>抽東南西北</h2>
+    <p id="wind-instruction">請點選一張牌，決定你的風位</p>
+    <div class="wind-tiles" id="wind-tiles"></div>
+    <div class="wind-result" id="wind-result"></div>
+  </div>
+</div>
+
+<!-- 骰子覆蓋層 -->
+<div id="dice-overlay" style="display:none;">
+  <div class="dice-panel">
+    <h2>莊家擲骰子</h2>
+    <div class="dice-display">
+      <span class="die" id="die-0">⚀</span>
+      <span class="die" id="die-1">⚀</span>
+      <span class="die" id="die-2">⚀</span>
+    </div>
+    <p id="dice-result-text">決定開門位置</p>
+    <button class="btn-start" id="btn-roll-dice">擲骰子！</button>
+  </div>
+</div>
+
+<script src="js/tiles.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
