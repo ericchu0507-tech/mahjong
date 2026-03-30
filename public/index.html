@@ -221,11 +221,11 @@
       <div class="wind-badge" id="wind-0">?</div>
     </div>
     <div class="action-buttons">
-      <button class="btn btn-chi"   id="btn-chi"   disabled>吃</button>
-      <button class="btn btn-peng"  id="btn-peng"  disabled>碰</button>
-      <button class="btn btn-gang"  id="btn-gang"  disabled>槓</button>
-      <button class="btn btn-hu"    id="btn-hu"    disabled>胡</button>
-      <button class="btn btn-pass"  id="btn-pass"  disabled>過</button>
+      <button class="btn btn-chi"   id="btn-chi"   disabled onclick="onClientChi()">吃</button>
+      <button class="btn btn-peng"  id="btn-peng"  disabled onclick="sendGameAction('peng')">碰</button>
+      <button class="btn btn-gang"  id="btn-gang"  disabled onclick="onClientGang()">槓</button>
+      <button class="btn btn-hu"    id="btn-hu"    disabled onclick="sendGameAction('hu')">胡</button>
+      <button class="btn btn-pass"  id="btn-pass"  disabled onclick="sendGameAction('pass')">過</button>
       <button class="btn btn-ting"  id="btn-ting"  disabled>聽</button>
     </div>
     <div class="hand-row">

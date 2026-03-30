@@ -155,18 +155,273 @@ function connectSocket() {
     renderRoomScreen(room);
   });
 
-  // 遊戲開始
-  socket.on('game:start', (data) => {
-    console.log('[Game] 遊戲開始', data);
-    // 單機模式暫時：隱藏房間，顯示遊戲
+  // 遊戲開始 — 伺服器發送初始狀態
+  socket.on('game:start', (state) => {
     showScreen('game');
-    // 觸發現有單機遊戲邏輯（之後換成伺服器驅動）
-    startSinglePlayerGame();
+    renderServerState(state);
+  });
+
+  // 遊戲狀態更新
+  socket.on('game:state', (state) => {
+    renderServerState(state);
+  });
+
+  // 有人胡牌
+  socket.on('game:hu', (result) => {
+    const winnerPlayer = result.players
+      ? result.players.find((_, i) => i === result.winnerSeat)
+      : null;
+    const winnerName = winnerPlayer?.username || '玩家';
+    const isSelf = result.winnerSeat === (window._myGameSeat || 0);
+    const title  = isSelf
+      ? (result.isSelfDraw ? '🎉 你自摸！' : '🎉 你胡牌！')
+      : `${winnerName} 胡牌了！`;
+
+    const detail = [
+      result.reasons?.join('、') || '',
+      `共 ${result.tai} 台 × $${result.totalPay / result.tai} = $${result.totalPay}`,
+      '─────',
+      result.scores?.map(s => {
+        const p = socket._roomPlayers?.find(pl => pl.userId === s.userId);
+        return `${p?.username || s.userId}：$${s.score}`;
+      }).join('　') || '',
+    ].join('\n');
+
+    document.getElementById('win-title').textContent = title;
+    document.getElementById('win-detail').innerHTML  = detail.replace(/\n/g, '<br>');
+    document.getElementById('win-overlay').style.display = 'flex';
+  });
+
+  // 留局/流局
+  socket.on('game:ended', ({ reason }) => {
+    document.getElementById('win-title').textContent = reason === '留局' ? '留局' : '流局';
+    document.getElementById('win-detail').innerHTML  = '牌已用完，重新開局';
+    document.getElementById('win-overlay').style.display = 'flex';
   });
 
   socket.on('error', ({ message }) => {
     alert('⚠️ ' + message);
   });
+}
+
+// ==========================================
+// 遊戲動作 — 送到伺服器
+// ==========================================
+function sendGameAction(type, extra = {}) {
+  if (socket) socket.emit('game:action', { type, ...extra });
+}
+
+// ==========================================
+// 渲染伺服器狀態
+// ==========================================
+function renderServerState(state) {
+  if (!state) return;
+  window._lastGameState = state;
+  window._myGameSeat    = state.mySeat;
+
+  // 找出我的 visual 位置對應（我永遠在底部）
+  // seat 0=東 1=南 2=西 3=北，但畫面上我在底部
+  const mySeat = state.mySeat;
+  // visual: bottom=我, right=下家, top=對家, left=上家
+  const seatToVisual = (seat) => {
+    const diff = (seat - mySeat + 4) % 4;
+    return ['bottom', 'right', 'top', 'left'][diff];
+  };
+
+  // DOM id 映射
+  const VISUAL_NAME  = { bottom: 'name-0', top: 'name-1', right: 'name-2', left: 'name-3' };
+  const VISUAL_SCORE = { bottom: 'score-0', top: 'score-1', right: 'score-2', left: 'score-3' };
+  const VISUAL_WIND  = { bottom: 'wind-0', top: 'wind-1', right: 'wind-2', left: 'wind-3' };
+  const VISUAL_DISCARD = { bottom: 'discard-tiles-0', top: 'discard-tiles-1', right: 'discard-tiles-2', left: 'discard-tiles-3' };
+  const VISUAL_HAND  = { bottom: 'my-hand', top: 'hand-top', right: 'hand-right', left: 'hand-left' };
+  const VISUAL_MELDS = { bottom: 'my-melds', top: 'melds-top', right: 'melds-right', left: 'melds-left' };
+  const VISUAL_FLOWERS = { bottom: 'flowers-bottom', top: 'flowers-top', right: 'flowers-right', left: 'flowers-left' };
+  const windNames    = { dong: '東', nan: '南', xi: '西', bei: '北' };
+
+  state.players.forEach((p, seat) => {
+    const vpos = seatToVisual(seat);
+    const isMe = seat === mySeat;
+    const isDealer = seat === state.dealer;
+
+    // 名字/分數/風位
+    const nameEl  = document.getElementById(VISUAL_NAME[vpos]);
+    const scoreEl = document.getElementById(VISUAL_SCORE[vpos]);
+    const windEl  = document.getElementById(VISUAL_WIND[vpos]);
+    if (nameEl)  nameEl.textContent  = isMe ? '你' : p.username;
+    if (scoreEl) scoreEl.textContent = `$${p.score}`;
+    if (windEl) {
+      windEl.textContent = isDealer
+        ? `${windNames[p.wind] || '?'} 莊`
+        : (windNames[p.wind] || '?');
+      windEl.classList.toggle('dealer', isDealer);
+    }
+
+    // 棄牌
+    const discardEl = document.getElementById(VISUAL_DISCARD[vpos]);
+    if (discardEl) {
+      discardEl.innerHTML = '';
+      (p.discards || []).forEach(tile => {
+        discardEl.appendChild(createTileElement(tile, false, true));
+      });
+    }
+
+    // 花牌
+    const flowerEl = document.getElementById(VISUAL_FLOWERS[vpos]);
+    if (flowerEl) {
+      flowerEl.innerHTML = '';
+      (p.flowers || []).forEach(tile => {
+        flowerEl.appendChild(createTileElement(tile, false, true));
+      });
+    }
+
+    // 面子
+    const meldEl = document.getElementById(VISUAL_MELDS[vpos]);
+    if (meldEl) {
+      meldEl.innerHTML = '';
+      (p.melds || []).forEach(meld => {
+        const wrap = document.createElement('div');
+        wrap.className = 'meld-group';
+        meld.tiles.forEach((tile, i) => {
+          const faceDown = meld.type === 'angang' && (i === 0 || i === 3);
+          wrap.appendChild(createTileElement(tile, faceDown, true));
+        });
+        meldEl.appendChild(wrap);
+      });
+    }
+
+    // 手牌
+    const handEl = document.getElementById(VISUAL_HAND[vpos]);
+    if (handEl) {
+      handEl.innerHTML = '';
+      if (isMe && p.hand) {
+        // 自己的手牌：可點擊
+        p.hand.forEach(tile => {
+          const el = createTileElement(tile, false, false);
+          const isDrawn = state.drawnTile && tile.id === state.drawnTile.id;
+          if (isDrawn) el.classList.add('drawn');
+          el.addEventListener('click', () => onMyTileClick(tile, el));
+          el.addEventListener('dblclick', () => onMyTileDiscard(tile));
+          handEl.appendChild(el);
+        });
+      } else {
+        // 其他玩家：蓋牌
+        for (let i = 0; i < p.handCount; i++) {
+          handEl.appendChild(createTileElement({}, true, vpos !== 'bottom'));
+        }
+      }
+    }
+  });
+
+  // 圓盤風向
+  const roundWindEl = document.getElementById('round-wind');
+  if (roundWindEl) roundWindEl.textContent = windNames[state.roundWind] || '東';
+
+  // 動作提示 + 按鈕
+  updateActionButtons(state);
+}
+
+let _selectedTile = null;
+function onMyTileClick(tile, el) {
+  document.querySelectorAll('.tile.selected').forEach(t => t.classList.remove('selected'));
+  _selectedTile = tile;
+  el.classList.add('selected');
+}
+function onMyTileDiscard(tile) {
+  const state = window._lastGameState;
+  if (!state || state.currentSeat !== state.mySeat) return;
+  sendGameAction('discard', { tileId: tile.id });
+  _selectedTile = null;
+}
+
+function updateActionButtons(state) {
+  const isMyTurn   = state.currentSeat === state.mySeat;
+  const hasPending = !!state.pendingDiscard;
+  const me         = state.players[state.mySeat];
+  const myHand     = me?.hand || [];
+  const hint       = document.getElementById('action-hint');
+
+  // 隱藏所有按鈕
+  ['btn-chi','btn-peng','btn-gang','btn-hu','btn-pass','btn-ting'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+
+  if (isMyTurn && !hasPending && state.phase === 'playing') {
+    // 我的回合，出牌
+    if (hint) hint.textContent = '你的回合！雙擊出牌';
+    const passEl = document.getElementById('btn-pass');
+    if (passEl) passEl.disabled = false;
+    // 胡牌檢查（自摸）
+    if (myHand.length % 3 === 2) {
+      const huEl = document.getElementById('btn-hu');
+      if (huEl) { huEl.disabled = false; }
+    }
+  } else if (hasPending && state.pendingFromSeat !== state.mySeat) {
+    // 有人出牌，我可能可以吃碰槓胡
+    const discard = state.pendingDiscard;
+    const fromSeat = state.pendingFromSeat;
+    const isUpstream = fromSeat === (state.mySeat + 3) % 4;
+
+    const canPeng = myHand.filter(t => t.suit === discard.suit && t.value === discard.value).length >= 2;
+    const canGang = !isUpstream && myHand.filter(t => t.suit === discard.suit && t.value === discard.value).length >= 3;
+    const canChi  = isUpstream && chiCombosClient(myHand, discard).length > 0;
+    const canHu   = canWinClient([...myHand, discard]);
+
+    if (canChi || canPeng || canGang || canHu) {
+      if (hint) hint.textContent = '你可以吃碰槓胡！';
+      if (canChi)  document.getElementById('btn-chi').disabled  = false;
+      if (canPeng) document.getElementById('btn-peng').disabled = false;
+      if (canGang) document.getElementById('btn-gang').disabled = false;
+      if (canHu)   document.getElementById('btn-hu').disabled   = false;
+      document.getElementById('btn-pass').disabled = false;
+    }
+  } else if (!isMyTurn) {
+    const currentPlayer = state.players[state.currentSeat];
+    if (hint) hint.textContent = `${currentPlayer?.username || '?'} 的回合...`;
+  }
+}
+
+// 前端簡化版 canWin（給按鈕判斷用）
+function canWinClient(hand) {
+  if (hand.length % 3 !== 2) return false;
+  return checkWinClient(hand);
+}
+function checkWinClient(tiles) {
+  if (tiles.length === 0) return true;
+  if (tiles.length === 2) return tiles[0].suit === tiles[1].suit && tiles[0].value === tiles[1].value;
+  if (tiles.length % 3 !== 2) return false;
+  const sorted = [...tiles].sort((a,b)=>{
+    const so={wan:0,tiao:1,tong:2,zi:3};
+    return ((so[a.suit]||0)-(so[b.suit]||0)) || ((a.value||0)-(b.value||0));
+  });
+  const tried = new Set();
+  for (let i = 0; i < sorted.length-1; i++) {
+    const key = sorted[i].suit+'-'+sorted[i].value;
+    if (tried.has(key)) continue; tried.add(key);
+    const j = sorted.findIndex((t,idx)=>idx>i&&t.suit===sorted[i].suit&&t.value===sorted[i].value);
+    if (j!==-1) {
+      const rest = sorted.filter((_,idx)=>idx!==i&&idx!==j);
+      if (checkMeldsClient(rest)) return true;
+    }
+  }
+  return false;
+}
+function checkMeldsClient(tiles) {
+  if (tiles.length===0) return true;
+  const s=[...tiles].sort((a,b)=>{const so={wan:0,tiao:1,tong:2,zi:3};return((so[a.suit]||0)-(so[b.suit]||0))||((a.value||0)-(b.value||0));});
+  const f=s[0];
+  if(s.filter(t=>t.suit===f.suit&&t.value===f.value).length>=3){const r=[...s];let rem=3;for(let i=0;i<r.length&&rem>0;i++){if(r[i].suit===f.suit&&r[i].value===f.value){r.splice(i,1);i--;rem--;}}if(checkMeldsClient(r))return true;}
+  if(f.suit!=='zi'&&f.suit!=='flower'){const r=[...s];const i1=r.findIndex(t=>t.suit===f.suit&&t.value===f.value+1);if(i1!==-1){const r2=[...r];r2.splice(i1,1);const i2=r2.findIndex(t=>t.suit===f.suit&&t.value===f.value+2);if(i2!==-1){const r3=[...r2];r3.splice(i2,1);r3.splice(r3.findIndex(t=>t===f),1);if(checkMeldsClient(r3))return true;}}}
+  return false;
+}
+function chiCombosClient(hand, discard) {
+  if (discard.suit==='zi'||discard.suit==='flower') return [];
+  const combos=[]; const v=discard.value; const s=discard.suit;
+  const has=(val)=>hand.find(t=>t.suit===s&&t.value===val);
+  if(v>=3&&has(v-2)&&has(v-1))combos.push([has(v-2),has(v-1)]);
+  if(v>=2&&v<=8&&has(v-1)&&has(v+1))combos.push([has(v-1),has(v+1)]);
+  if(v<=7&&has(v+1)&&has(v+2))combos.push([has(v+1),has(v+2)]);
+  return combos;
 }
 
 // ==========================================
@@ -280,15 +535,52 @@ function renderRoomScreen(room) {
 }
 
 // ==========================================
-// 暫時：觸發單機遊戲（Phase 2 前的過渡）
+// 吃/槓 需要選牌的動作
 // ==========================================
-function startSinglePlayerGame() {
-  // 隱藏所有 overlay，顯示遊戲畫面
-  document.getElementById('start-overlay') && (document.getElementById('start-overlay').style.display = 'none');
-  // 直接觸發現有的 startGame 邏輯（如果存在）
-  if (typeof startGame === 'function') {
-    document.getElementById('base-bet') && (document.getElementById('base-bet').value = '1');
-    startGame();
+function onClientChi() {
+  const state   = window._lastGameState;
+  if (!state) return;
+  const discard = state.pendingDiscard;
+  const me      = state.players[state.mySeat];
+  if (!discard || !me?.hand) return;
+
+  const combos = chiCombosClient(me.hand, discard);
+  if (combos.length === 0) return;
+  if (combos.length === 1) {
+    sendGameAction('chi', { tileIds: combos[0].map(t => t.id) });
+    return;
+  }
+  // 多種吃法：顯示選項
+  const overlay = document.getElementById('chi-select-overlay');
+  const opts    = document.getElementById('chi-select-options');
+  if (!overlay || !opts) return;
+  opts.innerHTML = '';
+  combos.forEach(combo => {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-chi';
+    btn.style.margin = '4px';
+    combo.forEach(tile => btn.appendChild(createTileElement(tile, false, true)));
+    btn.addEventListener('click', () => {
+      overlay.style.display = 'none';
+      sendGameAction('chi', { tileIds: combo.map(t => t.id) });
+    });
+    opts.appendChild(btn);
+  });
+  overlay.style.display = 'flex';
+}
+
+function onClientGang() {
+  const state = window._lastGameState;
+  if (!state) return;
+  if (_selectedTile) {
+    sendGameAction('gang', { tileId: _selectedTile.id });
+  } else {
+    // 找手牌中有四張的
+    const me = state.players[state.mySeat];
+    const four = me?.hand?.find(tile =>
+      me.hand.filter(t => t.suit === tile.suit && t.value === tile.value).length >= 4
+    );
+    if (four) sendGameAction('gang', { tileId: four.id });
   }
 }
 

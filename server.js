@@ -10,6 +10,10 @@ const cors       = require('cors');
 const jwt        = require('jsonwebtoken');
 const path       = require('path');
 const { getDB }  = require('./db/database');
+const { MahjongGame, canWin, chiCombos, countSame } = require('./game/MahjongGame');
+
+// gameInstances: Map<roomId, MahjongGame>
+const gameInstances = new Map();
 
 const app    = express();
 const server = http.createServer(app);
@@ -223,13 +227,127 @@ function startGame(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
   room.status = 'playing';
-  io.to(roomId).emit('game:start', { roomId });
+
+  const game = new MahjongGame(room);
+  gameInstances.set(roomId, game);
+  game.start();
+
+  // 通知每位玩家開始，並發送各自的手牌
+  room.players.forEach(p => {
+    const socketId = p.socketId;
+    const state    = game.getStateForPlayer(p.userId);
+    io.to(socketId).emit('game:start', state);
+  });
+
   io.emit('lobby:list', getLobbyList());
   console.log(`[Game] Room ${roomId} 遊戲開始`);
 }
 
 function handleGameAction(roomId, userId, data) {
-  console.log(`[Game] Room ${roomId} Player ${userId}:`, data?.type);
+  const game = gameInstances.get(roomId);
+  const room = rooms.get(roomId);
+  if (!game || !room) return;
+
+  const { type } = data;
+  let result;
+
+  if (type === 'discard') {
+    result = game.discard(userId, data.tileId);
+    if (result.error) return sendError(userId, room, result.error);
+
+    // 廣播出牌
+    broadcastGameState(room, game);
+
+    // 讓其他玩家有機會吃碰槓胡（延遲後若無回應自動過）
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 8000);
+
+  } else if (type === 'pass') {
+    clearRoomTimer(roomId);
+    result = game.pass(userId);
+    if (result.error) return sendError(userId, room, result.error);
+    advanceTurn(roomId);
+
+  } else if (type === 'peng') {
+    clearRoomTimer(roomId);
+    result = game.peng(userId);
+    if (result.error) return sendError(userId, room, result.error);
+    broadcastGameState(room, game);
+
+  } else if (type === 'chi') {
+    clearRoomTimer(roomId);
+    result = game.chi(userId, data.tileIds);
+    if (result.error) return sendError(userId, room, result.error);
+    broadcastGameState(room, game);
+
+  } else if (type === 'gang') {
+    clearRoomTimer(roomId);
+    result = game.gang(userId, data.tileId);
+    if (result.error) return sendError(userId, room, result.error);
+    broadcastGameState(room, game);
+
+  } else if (type === 'hu') {
+    clearRoomTimer(roomId);
+    result = game.hu(userId);
+    if (result.error) return sendError(userId, room, result.error);
+
+    // 更新資料庫分數
+    const db = getDB();
+    result.scores.forEach(({ userId: uid, score }) => {
+      db.updateUser(uid, { score });
+      if (uid === userId) db.updateUser(uid, { wins: (db.queryOne(u => u.id === uid)?.wins || 0) + 1 });
+    });
+    db.queryAll(null).forEach(u => db.updateUser(u.id, { games: (u.games || 0) + 1 }));
+
+    io.to(roomId).emit('game:hu', { ...result, roomId });
+    gameInstances.delete(roomId);
+    if (room) room.status = 'waiting';
+  }
+}
+
+// ── 定時器 ──
+const roomTimers = new Map();
+function clearRoomTimer(roomId) {
+  if (roomTimers.has(roomId)) {
+    clearTimeout(roomTimers.get(roomId));
+    roomTimers.delete(roomId);
+  }
+}
+function scheduleNextTurn(roomId, discardTile, fromSeat, delay) {
+  clearRoomTimer(roomId);
+  const timer = setTimeout(() => {
+    const game = gameInstances.get(roomId);
+    const room = rooms.get(roomId);
+    if (!game || !room || game.phase === 'ended') return;
+    advanceTurn(roomId);
+  }, delay);
+  roomTimers.set(roomId, timer);
+}
+
+function advanceTurn(roomId) {
+  const game = gameInstances.get(roomId);
+  const room = rooms.get(roomId);
+  if (!game || !room) return;
+
+  const result = game.nextTurn();
+  if (result.ended) {
+    io.to(roomId).emit('game:ended', { reason: result.reason });
+    gameInstances.delete(roomId);
+    if (room) room.status = 'waiting';
+    return;
+  }
+  broadcastGameState(room, game);
+}
+
+function broadcastGameState(room, game) {
+  room.players.forEach(p => {
+    const state = game.getStateForPlayer(p.userId);
+    io.to(p.socketId).emit('game:state', state);
+  });
+}
+
+function sendError(userId, room, message) {
+  const p = room.players.find(pl => pl.userId === userId);
+  if (p) io.to(p.socketId).emit('error', { message });
 }
 
 // ==========================================
