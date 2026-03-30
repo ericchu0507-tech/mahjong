@@ -157,7 +157,8 @@ io.on('connection', (socket) => {
 
     io.to(room.id).emit('room:update', { room: roomToClient(room) });
 
-    if (room.players.length === 4 && room.players.every(p => p.ready)) {
+    const minPlayers = 2; // 改成 4 正式四人對戰
+    if (room.players.length >= minPlayers && room.players.every(p => p.ready)) {
       startGame(room.id);
     }
   });
