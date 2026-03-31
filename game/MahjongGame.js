@@ -215,8 +215,9 @@ class MahjongGame {
     this.dealer = this.players.findIndex(p => p.wind === 'dong');
     this.currentSeat = this.dealer;
 
-    // 骰子（兩顆，決定開門）
+    // 骰子（三顆，決定開門）
     this.dice = [
+      Math.floor(Math.random() * 6) + 1,
       Math.floor(Math.random() * 6) + 1,
       Math.floor(Math.random() * 6) + 1,
     ];

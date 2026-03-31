@@ -230,7 +230,7 @@ function scheduleBotTurnIfNeeded(roomId) {
   const roomPlayer = room.players.find(p => p.userId === currentPlayer.userId);
   if (!roomPlayer?.isBot) return;
 
-  // 人機延遲 0.4 秒出牌
+  // 人機延遲 0.8 秒出牌
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
@@ -249,6 +249,77 @@ function scheduleBotTurnIfNeeded(roomId) {
     broadcastGameState(r, g);
     scheduleNextTurnWithBotCheck(roomId, 1500);
   }, 400);
+}
+
+// ── Bot 吃碰決策 ──
+function scheduleBotClaimIfNeeded(roomId) {
+  const game = gameInstances.get(roomId);
+  const room = rooms.get(roomId);
+  if (!game || !room || game.phase !== 'waiting_response') return;
+  if (!game.pendingDiscard) return;
+
+  const discard     = game.pendingDiscard;
+  const fromSeat    = game.pendingFromSeat;
+
+  // 延遲 0.8 秒讓人類玩家先行動，再讓 bot 決策
+  setTimeout(() => {
+    const g = gameInstances.get(roomId);
+    const r = rooms.get(roomId);
+    if (!g || !r || g.phase !== 'waiting_response') return;
+
+    // 先找能碰的 bot（任何座位）
+    for (let seat = 0; seat < 4; seat++) {
+      const p = g.players[seat];
+      const rp = r.players.find(x => x.userId === p.userId);
+      if (!rp?.isBot) continue;
+      if (seat === fromSeat) continue;
+
+      // 胡牌優先
+      if (canWin([...p.hand, discard])) {
+        const res = g.hu(p.userId);
+        if (!res.error) {
+          const db = getDB();
+          res.scores.forEach(({ userId: uid, score }) => {
+            db.updateUser(uid, { score });
+          });
+          io.to(roomId).emit('game:hu', { ...res, roomId });
+          gameInstances.delete(roomId);
+          r.status = 'waiting';
+          return;
+        }
+      }
+
+      // 碰牌
+      if (countSame(p.hand, discard) >= 2) {
+        const res = g.peng(p.userId);
+        if (!res.error) {
+          clearRoomTimer(roomId);
+          broadcastGameState(r, g);
+          // 碰完後 bot 需要出牌
+          scheduleBotTurnIfNeeded(roomId);
+          return;
+        }
+      }
+    }
+
+    // 再找能吃的 bot（只有下家）
+    const nextSeat = (fromSeat + 1) % 4;
+    const nextP = g.players[nextSeat];
+    const nextRp = r.players.find(x => x.userId === nextP?.userId);
+    if (nextRp?.isBot && g.phase === 'waiting_response') {
+      const combos = chiCombos(nextP.hand, discard);
+      if (combos.length > 0) {
+        const tileIds = combos[0].map(t => t.id);
+        const res = g.chi(nextP.userId, tileIds);
+        if (!res.error) {
+          clearRoomTimer(roomId);
+          broadcastGameState(r, g);
+          scheduleBotTurnIfNeeded(roomId);
+          return;
+        }
+      }
+    }
+  }, 800);
 }
 
 function scheduleNextTurnWithBotCheck(roomId, delay) {
@@ -455,6 +526,8 @@ function clearRoomTimer(roomId) {
 }
 function scheduleNextTurn(roomId, discardTile, fromSeat, delay) {
   clearRoomTimer(roomId);
+  // bot 吃碰決策
+  scheduleBotClaimIfNeeded(roomId);
   const timer = setTimeout(() => {
     const game = gameInstances.get(roomId);
     const room = rooms.get(roomId);

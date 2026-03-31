@@ -109,11 +109,11 @@ body {
 .t-flower { font-size: 26px; color: #6a1b9a; font-weight: 900; line-height: 1; }
 
 /* ── 小牌（棄牌區）縮小字體 ── */
-.tile-small .t-num   { font-size: 22px; }
-.tile-small .t-suit  { font-size: 13px; }
-.tile-small .t-zi    { font-size: 34px; }
-.tile-small .t-flower{ font-size: 22px; }
-.tile-small .t-bai   { width: 26px; height: 34px; border-width: 2px; }
+.tile-small .t-num   { font-size: 30px; }
+.tile-small .t-suit  { font-size: 16px; }
+.tile-small .t-zi    { font-size: 36px; }
+.tile-small .t-flower{ font-size: 26px; }
+.tile-small .t-bai   { width: 34px; height: 46px; border-width: 3px; }
 
 /* 摸進來的牌（最後一張） */
 .tile.drawn {
@@ -149,9 +149,9 @@ body {
 
 /* 小尺寸牌（棄牌區用） */
 .tile.tile-small {
-  width: 58px;
-  height: 78px;
-  font-size: 15px;
+  width: 66px;
+  height: 90px;
+  font-size: 22px;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.9),
     2px 3px 0px #8a7a50,
@@ -396,7 +396,7 @@ body {
 
 .play-zone {
   flex: 1;
-  min-width: 832px;
+  min-width: 952px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -536,7 +536,7 @@ body {
   background: rgba(0,0,0,0.25);
   border-radius: 10px;
   padding: 6px;
-  width: 820px;
+  width: 940px;
 }
 
 .discard-middle-row {
@@ -561,18 +561,18 @@ body {
 .discard-top  .discard-tiles,
 .discard-bottom .discard-tiles {
   display: grid;
-  grid-template-columns: repeat(9, 58px);
+  grid-template-columns: repeat(9, 66px);
   gap: 2px;
-  min-height: 60px;
+  min-height: 92px;
 }
 
 /* 左右棄牌：6欄 grid */
 .discard-left  .discard-tiles,
 .discard-right .discard-tiles {
   display: grid;
-  grid-template-columns: repeat(6, 58px);
+  grid-template-columns: repeat(6, 66px);
   gap: 2px;
-  min-height: 60px;
+  min-height: 92px;
 }
 
 .discard-top,
@@ -588,7 +588,7 @@ body {
   border-radius: 6px;
   padding: 4px 5px;
   flex-shrink: 0;
-  min-width: 364px; /* 6×58px + 5×2px gap + 2×5px padding */
+  min-width: 418px; /* 6×66px + 5×2px gap + 2×5px padding */
 }
 
 /* 標籤：上下顯示在牌的上方，左右顯示在牌的上方 */
