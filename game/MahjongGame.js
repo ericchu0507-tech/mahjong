@@ -16,6 +16,7 @@ function createDeck() {
     for (let v = 1; v <= 9; v++) {
       for (let c = 0; c < 4; c++) {
         deck.push({ id: id++, suit, value: v, isFlower: false, isHonor: false,
+          display: NUM_CH[v], subLabel: SUIT_CH[suit],
           label: NUM_CH[v] + SUIT_CH[suit] });
       }
     }
@@ -23,12 +24,14 @@ function createDeck() {
   ZI_TILES.forEach(val => {
     for (let c = 0; c < 4; c++) {
       deck.push({ id: id++, suit: 'zi', value: val, isFlower: false, isHonor: true,
+        display: ZI_CH[val], subLabel: '',
         label: ZI_CH[val] });
     }
   });
   FLOWER_VALS.forEach(val => {
     const disp = {chun:'春',xia:'夏',qiu:'秋',dong2:'冬',mei:'梅',lan:'蘭',ju:'菊',zhu:'竹'}[val];
     deck.push({ id: id++, suit: 'flower', value: val, isFlower: true, isHonor: false,
+      display: disp, subLabel: '',
       label: disp });
   });
   return deck;

@@ -33,7 +33,7 @@ function showScreen(id) {
   });
   // game-container 是獨立處理
   const gc = document.getElementById('game-container');
-  if (gc) gc.style.display = id === 'game' ? 'flex' : 'none';
+  if (gc) gc.style.display = id === 'game' ? 'grid' : 'none';
 }
 
 function showLobby() {
