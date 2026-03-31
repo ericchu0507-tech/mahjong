@@ -483,6 +483,8 @@ class MahjongGame {
       this.drawnTile = tile;
     }
 
+    this.pendingDiscard  = null;
+    this.pendingFromSeat = null;
     this.phase = 'playing';
     return { ok: true, seat: this.currentSeat, drawn: this.drawnTile };
   }
@@ -538,7 +540,7 @@ class MahjongGame {
         discards: this.discardPiles[seat],
         handCount: p.hand.length,
         // 只有自己能看到手牌
-        hand: seat === mySeat ? p.hand : null,
+        hand: seat === mySeat ? sortTiles(p.hand) : null,
       })),
       mySeat,
       myHand:   this.players[mySeat].hand,

@@ -111,7 +111,7 @@ body {
 /* ── 小牌（棄牌區）縮小字體 ── */
 .tile-small .t-num   { font-size: 18px; }
 .tile-small .t-suit  { font-size: 11px; }
-.tile-small .t-zi    { font-size: 22px; }
+.tile-small .t-zi    { font-size: 26px; }
 .tile-small .t-flower{ font-size: 18px; }
 .tile-small .t-bai   { width: 22px; height: 28px; border-width: 2px; }
 

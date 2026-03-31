@@ -443,6 +443,7 @@ function advanceTurn(roomId) {
     return;
   }
   broadcastGameState(room, game);
+  scheduleBotTurnIfNeeded(roomId);
 }
 
 function broadcastGameState(room, game) {
