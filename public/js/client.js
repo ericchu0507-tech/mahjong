@@ -51,7 +51,7 @@ function scaleGameToFit() {
   const gc = document.getElementById('game-container');
   if (!gc || gc.style.display === 'none') return;
 
-  const LOGICAL_W = 2200;
+  const LOGICAL_W = 2600;
   const naturalH  = gc.scrollHeight || 900;
 
   const scaleX = window.innerWidth  / LOGICAL_W;
