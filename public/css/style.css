@@ -13,7 +13,7 @@ body {
   font-family: '微軟正黑體', 'Microsoft JhengHei', sans-serif;
   color: #fff;
   min-height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,17 +24,16 @@ body {
    ========================================== */
 #game-container {
   width: 1300px;
-  height: 860px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: 1fr;
   background: #1b5e20; /* 深綠桌布 */
   background-image:
     radial-gradient(ellipse at center, #2e7d32 0%, #1b5e20 70%);
-  position: relative;
+  position: fixed;
   border-radius: 16px;
   box-shadow: 0 0 60px rgba(0,0,0,0.8);
-  overflow: hidden;
+  transform-origin: top left;
 }
 
 .middle-row {

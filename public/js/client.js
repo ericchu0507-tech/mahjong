@@ -33,8 +33,40 @@ function showScreen(id) {
   });
   // game-container 是獨立處理
   const gc = document.getElementById('game-container');
-  if (gc) gc.style.display = id === 'game' ? 'grid' : 'none';
+  if (gc) {
+    if (id === 'game') {
+      gc.style.display = 'grid';
+      requestAnimationFrame(scaleGameToFit);
+    } else {
+      gc.style.display = 'none';
+      gc.style.transform = '';
+      gc.style.left = '';
+      gc.style.top = '';
+    }
+  }
 }
+
+// 自動縮放遊戲桌以符合螢幕大小
+function scaleGameToFit() {
+  const gc = document.getElementById('game-container');
+  if (!gc || gc.style.display === 'none') return;
+
+  const LOGICAL_W = 1300;
+  const naturalH  = gc.scrollHeight || 900;
+
+  const scaleX = window.innerWidth  / LOGICAL_W;
+  const scaleY = window.innerHeight / naturalH;
+  const scale  = Math.min(scaleX, scaleY, 1);
+
+  const scaledW = LOGICAL_W * scale;
+  const scaledH = naturalH  * scale;
+
+  gc.style.transform       = `scale(${scale})`;
+  gc.style.transformOrigin = 'top left';
+  gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
+  gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
+}
+window.addEventListener('resize', scaleGameToFit);
 
 function showLobby() {
   showScreen('lobby-overlay');
@@ -318,6 +350,9 @@ function renderServerState(state) {
 
   // 動作提示 + 按鈕
   updateActionButtons(state);
+
+  // 確保縮放正確（手牌渲染後重新量測）
+  requestAnimationFrame(scaleGameToFit);
 }
 
 let _selectedTile = null;
