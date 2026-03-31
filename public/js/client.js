@@ -51,7 +51,7 @@ function scaleGameToFit() {
   const gc = document.getElementById('game-container');
   if (!gc || gc.style.display === 'none') return;
 
-  const LOGICAL_W = 1500;
+  const LOGICAL_W = 2200;
   const naturalH  = gc.scrollHeight || 900;
 
   const scaleX = window.innerWidth  / LOGICAL_W;
@@ -302,7 +302,7 @@ function renderServerState(state) {
     if (flowerEl) {
       flowerEl.innerHTML = '';
       (p.flowers || []).forEach(tile => {
-        flowerEl.appendChild(createTileElement(tile, false, true));
+        flowerEl.appendChild(createTileElement(tile, false, false));
       });
     }
 
