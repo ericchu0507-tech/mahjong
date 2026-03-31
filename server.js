@@ -453,8 +453,8 @@ function handleGameAction(roomId, userId, data) {
     // 廣播出牌
     broadcastGameState(room, game);
 
-    // 讓其他玩家有機會吃碰槓胡（15秒後若無回應自動過）
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 15000);
+    // 等待玩家吃碰槓胡（無時限，玩家按「過」才繼續）
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 86400000);
 
   } else if (type === 'pass') {
     clearRoomTimer(roomId);
