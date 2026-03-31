@@ -266,6 +266,7 @@ function scheduleNextTurnWithBotCheck(roomId, delay) {
     }
     broadcastGameState(room, game);
     scheduleBotTurnIfNeeded(roomId);
+    scheduleAutoDiscard(roomId);
   }, delay);
   roomTimers.set(roomId, timer);
 }
@@ -361,6 +362,7 @@ function startGame(roomId) {
       io.to(p.socketId).emit('game:start', state);
     });
     scheduleBotTurnIfNeeded(roomId);
+    scheduleAutoDiscard(roomId);
   }, 4000);
 }
 
@@ -380,8 +382,8 @@ function handleGameAction(roomId, userId, data) {
     // 廣播出牌
     broadcastGameState(room, game);
 
-    // 讓其他玩家有機會吃碰槓胡（10秒後若無回應自動過）
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 10000);
+    // 讓其他玩家有機會吃碰槓胡（15秒後若無回應自動過）
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 15000);
 
   } else if (type === 'pass') {
     clearRoomTimer(roomId);
@@ -508,7 +510,7 @@ function scheduleAutoDiscard(roomId) {
     const result = g.discard(player.userId, toDiscard.id);
     if (result.error) return;
     broadcastGameState(r, g);
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 10000);
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 15000);
   }, 15000);
   autoDiscardTimers.set(roomId, timer);
 }
