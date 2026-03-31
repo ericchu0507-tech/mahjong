@@ -345,6 +345,14 @@ class MahjongGame {
     });
     player.melds.push({ type: 'peng', tiles: meldTiles });
 
+    // 從棄牌堆移除被碰的牌
+    const fromPile = this.discardPiles[this.pendingFromSeat];
+    const di = fromPile.findLastIndex ? fromPile.findLastIndex(t => t.id === discard.id)
+      : [...fromPile].reverse().findIndex(t => t.id === discard.id);
+    const realIdx = fromPile.findLastIndex
+      ? di : (di === -1 ? -1 : fromPile.length - 1 - di);
+    if (realIdx !== -1) fromPile.splice(realIdx, 1);
+
     this.pendingDiscard  = null;
     this.pendingFromSeat = null;
     this.currentSeat     = seat;
@@ -374,6 +382,11 @@ class MahjongGame {
 
     const meldTiles = sortTiles([discard, ...handTiles]);
     player.melds.push({ type: 'chi', tiles: meldTiles });
+
+    // 從棄牌堆移除被吃的牌
+    const fromPile2 = this.discardPiles[this.pendingFromSeat];
+    const di2 = fromPile2.map((t,i)=>i).reverse().find(i => fromPile2[i].id === discard.id);
+    if (di2 !== undefined) fromPile2.splice(di2, 1);
 
     this.pendingDiscard  = null;
     this.pendingFromSeat = null;
