@@ -188,7 +188,13 @@ function connectSocket() {
   });
 
   // 遊戲開始 — 伺服器發送初始狀態
+  // 開場動畫（抽風 + 骰子）
+  socket.on('game:intro', (intro) => {
+    showIntroAnimation(intro);
+  });
+
   socket.on('game:start', (state) => {
+    hideIntroAnimation();
     showScreen('game');
     renderServerState(state);
   });
@@ -636,6 +642,72 @@ function onClientGang() {
     );
     if (four) sendGameAction('gang', { tileId: four.id });
   }
+}
+
+// ==========================================
+// 開場動畫（抽風 + 骰子）
+// ==========================================
+function showIntroAnimation(intro) {
+  let el = document.getElementById('intro-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'intro-overlay';
+    el.style.cssText = `
+      position:fixed;inset:0;background:rgba(0,0,0,0.88);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      z-index:9999;gap:32px;color:#fff;font-family:inherit;
+    `;
+    document.body.appendChild(el);
+  }
+
+  const windNames = { dong:'東', nan:'南', xi:'西', bei:'北' };
+  const windColors = { dong:'#e53935', nan:'#1565c0', xi:'#fff', bei:'#222' };
+  const windBg     = { dong:'#fff', nan:'#fff', xi:'#1a1a2e', bei:'#fff' };
+
+  // 風位列表
+  const windRows = intro.players.map(p =>
+    `<div style="display:flex;align-items:center;gap:12px;font-size:18px;">
+      <div style="width:48px;height:48px;border-radius:50%;background:${windColors[p.wind]};
+        color:${windBg[p.wind]};display:flex;align-items:center;justify-content:center;
+        font-size:24px;font-weight:900;border:2px solid rgba(255,255,255,0.3);">${windNames[p.wind]}</div>
+      <span style="color:#ffcc02;font-weight:bold;">${p.username}</span>
+      ${p.wind === intro.players[intro.dealer]?.wind ? '<span style="background:#ff6f00;border-radius:8px;padding:2px 8px;font-size:13px;">莊</span>' : ''}
+    </div>`
+  ).join('');
+
+  // 骰子
+  const diceFaces = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+  const diceSum = intro.dice[0] + intro.dice[1];
+  const diceHtml = intro.dice.map(d =>
+    `<span style="font-size:52px;line-height:1;">${diceFaces[d]}</span>`
+  ).join('');
+
+  el.innerHTML = `
+    <div style="font-size:28px;font-weight:900;color:#ffcc02;letter-spacing:4px;">抽風結果</div>
+    <div style="display:flex;flex-direction:column;gap:12px;background:rgba(255,255,255,0.06);
+      border-radius:16px;padding:24px 40px;border:1px solid rgba(255,255,255,0.15);">
+      ${windRows}
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="font-size:16px;color:#aaa;letter-spacing:2px;">擲骰開門</div>
+      <div style="display:flex;gap:16px;">${diceHtml}</div>
+      <div style="font-size:16px;color:#ffcc02;">點數合計：${diceSum}</div>
+    </div>
+    <div style="font-size:14px;color:#888;animation:blink 1s infinite;">遊戲即將開始...</div>
+  `;
+
+  // 閃爍動畫
+  if (!document.getElementById('intro-blink-style')) {
+    const style = document.createElement('style');
+    style.id = 'intro-blink-style';
+    style.textContent = `@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }`;
+    document.head.appendChild(style);
+  }
+}
+
+function hideIntroAnimation() {
+  const el = document.getElementById('intro-overlay');
+  if (el) el.remove();
 }
 
 // ==========================================

@@ -14,6 +14,8 @@ const { MahjongGame, canWin, chiCombos, countSame } = require('./game/MahjongGam
 
 // gameInstances: Map<roomId, MahjongGame>
 const gameInstances = new Map();
+// pendingChiRequests: Map<roomId, { userId, tileIds, timer }>
+const pendingChiRequests = new Map();
 
 const app    = express();
 const server = http.createServer(app);
@@ -337,17 +339,26 @@ function startGame(roomId) {
   gameInstances.set(roomId, game);
   game.start();
 
-  // 通知真人玩家開始
-  room.players.filter(p => !p.isBot).forEach(p => {
-    const state = game.getStateForPlayer(p.userId);
-    io.to(p.socketId).emit('game:start', state);
-  });
-
   io.emit('lobby:list', getLobbyList());
   console.log(`[Game] Room ${roomId} 遊戲開始（${room.players.filter(p=>p.isBot).length} 個人機）`);
 
-  // 如果目前輪到人機，自動出牌
-  scheduleBotTurnIfNeeded(roomId);
+  // 先送抽風/骰子動畫資訊
+  const intro = game.getIntroInfo();
+  room.players.filter(p => !p.isBot).forEach(p => {
+    io.to(p.socketId).emit('game:intro', intro);
+  });
+
+  // 4 秒後才正式開始（動畫結束）
+  setTimeout(() => {
+    const g = gameInstances.get(roomId);
+    const r = rooms.get(roomId);
+    if (!g || !r) return;
+    r.players.filter(p => !p.isBot).forEach(p => {
+      const state = g.getStateForPlayer(p.userId);
+      io.to(p.socketId).emit('game:start', state);
+    });
+    scheduleBotTurnIfNeeded(roomId);
+  }, 4000);
 }
 
 function handleGameAction(roomId, userId, data) {
@@ -376,15 +387,32 @@ function handleGameAction(roomId, userId, data) {
 
   } else if (type === 'peng') {
     clearRoomTimer(roomId);
+    // 碰牌優先：取消任何待執行的吃牌
+    const chiTimer = roomTimers.get(roomId + '_chi');
+    if (chiTimer) { clearTimeout(chiTimer); roomTimers.delete(roomId + '_chi'); }
+    pendingChiRequests.delete(roomId);
     result = game.peng(userId);
     if (result.error) return sendError(userId, room, result.error);
     broadcastGameState(room, game);
 
   } else if (type === 'chi') {
     clearRoomTimer(roomId);
-    result = game.chi(userId, data.tileIds);
-    if (result.error) return sendError(userId, room, result.error);
-    broadcastGameState(room, game);
+    // 延遲 1.5 秒執行，讓碰牌有機會搶先
+    const pending = { userId, tileIds: data.tileIds };
+    pendingChiRequests.set(roomId, pending);
+    const chiTimer = setTimeout(() => {
+      const req = pendingChiRequests.get(roomId);
+      if (!req || req !== pending) return; // 已被碰牌取消
+      pendingChiRequests.delete(roomId);
+      const g = gameInstances.get(roomId);
+      const r = rooms.get(roomId);
+      if (!g || !r) return;
+      const res = g.chi(req.userId, req.tileIds);
+      if (res.error) return sendError(req.userId, r, res.error);
+      broadcastGameState(r, g);
+    }, 1500);
+    roomTimers.set(roomId + '_chi', chiTimer);
+    return;
 
   } else if (type === 'gang') {
     clearRoomTimer(roomId);

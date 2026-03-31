@@ -214,12 +214,32 @@ class MahjongGame {
     this.dealer = this.players.findIndex(p => p.wind === 'dong');
     this.currentSeat = this.dealer;
 
+    // 骰子（兩顆，決定開門）
+    this.dice = [
+      Math.floor(Math.random() * 6) + 1,
+      Math.floor(Math.random() * 6) + 1,
+    ];
+
     // 洗牌發牌
     this.deck = shuffleDeck(createDeck());
     this.dealTiles();
     this.phase = 'playing';
 
     return this.getPublicState();
+  }
+
+  // 回傳開場動畫資訊
+  getIntroInfo() {
+    const windNames = { dong:'東', nan:'南', xi:'西', bei:'北' };
+    return {
+      dice: this.dice,
+      dealer: this.dealer,
+      players: this.players.map(p => ({
+        username: p.username,
+        wind: p.wind,
+        windName: windNames[p.wind],
+      })),
+    };
   }
 
   dealTiles() {
