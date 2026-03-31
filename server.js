@@ -91,24 +91,28 @@ io.on('connection', (socket) => {
   });
 
   // 建立房間
-  socket.on('room:create', ({ name, baseBet }) => {
-    const db     = getDB();
-    const user   = db.queryOne(u => u.id === socket.userId);
-    const roomId = generateRoomId();
-    const bet    = [1, 5, 10].includes(Number(baseBet)) ? Number(baseBet) : 1;
+  socket.on('room:create', ({ name, baseBet, ruleset, allowBots }) => {
+    const db      = getDB();
+    const user    = db.queryOne(u => u.id === socket.userId);
+    const roomId  = generateRoomId();
+    const bet     = [1, 5, 10].includes(Number(baseBet)) ? Number(baseBet) : 1;
+    const rules   = ['taiwan','american','hk'].includes(ruleset) ? ruleset : 'taiwan';
 
     const room = {
-      id:      roomId,
-      name:    name || `${socket.username}的房間`,
-      baseBet: bet,
-      status:  'waiting',
-      hostId:  socket.userId,
+      id:         roomId,
+      name:       name || `${socket.username}的房間`,
+      baseBet:    bet,
+      ruleset:    rules,
+      allowBots:  allowBots !== false,
+      status:     'waiting',
+      hostId:     socket.userId,
       players: [{
         userId:   socket.userId,
         username: socket.username,
         score:    user?.score || 1000,
         ready:    false,
         socketId: socket.id,
+        isBot:    false,
       }],
     };
 
@@ -195,14 +199,87 @@ function roomToClient(room) {
     id:       room.id,
     name:     room.name,
     base_bet: room.baseBet,
+    ruleset:  room.ruleset || 'taiwan',
     status:   room.status,
-    players:  room.players.map(p => ({
+    players:  room.players.filter(p => !p.isBot).map(p => ({
       id:       p.userId,
       username: p.username,
       score:    p.score,
       ready:    p.ready ? 1 : 0,
     })),
   };
+}
+
+// ── 人機自動出牌 ──
+function scheduleBotTurnIfNeeded(roomId) {
+  const game = gameInstances.get(roomId);
+  const room = rooms.get(roomId);
+  if (!game || !room || game.phase === 'ended') return;
+
+  const currentPlayer = game.players[game.currentSeat];
+  if (!currentPlayer) return;
+
+  const roomPlayer = room.players.find(p => p.userId === currentPlayer.userId);
+  if (!roomPlayer?.isBot) return;
+
+  // 人機延遲 1.2 秒出牌
+  setTimeout(() => {
+    const g = gameInstances.get(roomId);
+    const r = rooms.get(roomId);
+    if (!g || !r || g.phase === 'ended') return;
+
+    // 人機：用智慧出牌選孤張
+    const botPlayer = g.players[g.currentSeat];
+    if (!botPlayer) return;
+
+    const toDiscard = botSmartDiscard(botPlayer.hand);
+    if (!toDiscard) return;
+
+    const result = g.discard(botPlayer.userId, toDiscard.id);
+    if (result.error) return;
+
+    broadcastGameState(r, g);
+    scheduleNextTurnWithBotCheck(roomId, 3000);
+  }, 1200);
+}
+
+function scheduleNextTurnWithBotCheck(roomId, delay) {
+  clearRoomTimer(roomId);
+  const timer = setTimeout(() => {
+    const game = gameInstances.get(roomId);
+    const room = rooms.get(roomId);
+    if (!game || !room || game.phase === 'ended') return;
+    const result = game.nextTurn();
+    if (result.ended) {
+      io.to(roomId).emit('game:ended', { reason: result.reason });
+      gameInstances.delete(roomId);
+      if (room) room.status = 'waiting';
+      return;
+    }
+    broadcastGameState(room, game);
+    scheduleBotTurnIfNeeded(roomId);
+  }, delay);
+  roomTimers.set(roomId, timer);
+}
+
+function botSmartDiscard(hand) {
+  if (!hand || hand.length === 0) return null;
+  let minScore = Infinity;
+  let toDiscard = hand[0];
+  hand.forEach((tile, idx) => {
+    const sameCount = hand.filter((t, i) => i !== idx && t.suit === tile.suit && t.value === tile.value).length;
+    let score = 0;
+    if (sameCount >= 2) score = 6;
+    else if (sameCount === 1) score = 4;
+    else if (tile.suit !== 'zi' && tile.suit !== 'flower') {
+      const v = tile.value;
+      const adj = hand.filter((t, i) => i !== idx && t.suit === tile.suit &&
+        (t.value === v-2 || t.value === v-1 || t.value === v+1 || t.value === v+2)).length;
+      score = adj >= 2 ? 5 : adj >= 1 ? 2 : 0;
+    }
+    if (score < minScore) { minScore = score; toDiscard = tile; }
+  });
+  return toDiscard;
 }
 
 function leaveRoom(socket) {
@@ -224,24 +301,50 @@ function leaveRoom(socket) {
   io.emit('lobby:list', getLobbyList());
 }
 
+const BOT_NAMES = ['電腦小明', '電腦小華', '電腦阿嬌', '電腦老王'];
+let botIdCounter = -1;
+
+function fillBotsIfNeeded(room) {
+  if (!room.allowBots) return;
+  let botCount = 0;
+  while (room.players.length < 4) {
+    const botId   = botIdCounter--;
+    const botName = BOT_NAMES[botCount % BOT_NAMES.length];
+    room.players.push({
+      userId:   botId,
+      username: botName,
+      score:    1000,
+      ready:    true,
+      socketId: null,
+      isBot:    true,
+    });
+    botCount++;
+  }
+}
+
 function startGame(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
+
+  // 人數不足時補人機
+  fillBotsIfNeeded(room);
   room.status = 'playing';
 
   const game = new MahjongGame(room);
   gameInstances.set(roomId, game);
   game.start();
 
-  // 通知每位玩家開始，並發送各自的手牌
-  room.players.forEach(p => {
-    const socketId = p.socketId;
-    const state    = game.getStateForPlayer(p.userId);
-    io.to(socketId).emit('game:start', state);
+  // 通知真人玩家開始
+  room.players.filter(p => !p.isBot).forEach(p => {
+    const state = game.getStateForPlayer(p.userId);
+    io.to(p.socketId).emit('game:start', state);
   });
 
   io.emit('lobby:list', getLobbyList());
-  console.log(`[Game] Room ${roomId} 遊戲開始`);
+  console.log(`[Game] Room ${roomId} 遊戲開始（${room.players.filter(p=>p.isBot).length} 個人機）`);
+
+  // 如果目前輪到人機，自動出牌
+  scheduleBotTurnIfNeeded(roomId);
 }
 
 function handleGameAction(roomId, userId, data) {

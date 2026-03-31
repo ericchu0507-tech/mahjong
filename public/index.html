@@ -66,15 +66,29 @@
 
       <!-- 右：建立房間 -->
       <div class="lobby-right">
-        <div class="lobby-section-title">建立新房間</div>
+        <div class="lobby-section-title">
+          建立新房間
+          <button class="btn-refresh" onclick="showRulesModal()">📖 規則說明</button>
+        </div>
         <div class="create-room-form">
           <input type="text" id="room-name" placeholder="房間名稱（可不填）" maxlength="30">
+          <label>遊戲規則：
+            <select id="room-ruleset">
+              <option value="taiwan">🇹🇼 台灣麻將</option>
+              <option value="american">🇺🇸 美國麻將（換三張）</option>
+              <option value="hk">🇭🇰 港式台麻</option>
+            </select>
+          </label>
           <label>底注：
             <select id="room-bet">
               <option value="1">$1 / 台</option>
               <option value="5">$5 / 台</option>
               <option value="10">$10 / 台</option>
             </select>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="room-allow-bots" checked>
+            人數不足時加入人機
           </label>
           <button class="btn-start" onclick="doCreateRoom()">建立房間</button>
         </div>
@@ -279,6 +293,98 @@
     </div>
     <p id="dice-result-text">決定開門位置</p>
     <button class="btn-start" id="btn-roll-dice">擲骰子！</button>
+  </div>
+</div>
+
+<!-- 規則說明 Modal -->
+<div id="rules-modal" style="display:none;" class="overlay-screen" onclick="if(event.target===this)hideRulesModal()">
+  <div class="rules-panel">
+    <div class="rules-header">
+      <h2>📖 麻將規則說明</h2>
+      <button class="btn-logout" onclick="hideRulesModal()">✕ 關閉</button>
+    </div>
+    <div class="rules-tabs">
+      <button class="rules-tab active" onclick="switchRulesTab('taiwan',this)">🇹🇼 台灣麻將</button>
+      <button class="rules-tab" onclick="switchRulesTab('american',this)">🇺🇸 美國麻將</button>
+      <button class="rules-tab" onclick="switchRulesTab('hk',this)">🇭🇰 港式台麻</button>
+    </div>
+    <div class="rules-body">
+
+      <!-- 台灣麻將 -->
+      <div id="rules-taiwan" class="rules-content">
+        <h3>基本規則</h3>
+        <ul>
+          <li>每人起手 <b>16 張</b>，莊家先出牌</li>
+          <li>胡牌 = <b>5 面子 + 1 對</b>（共 17 張）</li>
+          <li><b>吃</b>：只能吃上家棄牌（順子）</li>
+          <li><b>碰</b>：任何人棄牌皆可碰（刻子）</li>
+          <li><b>明槓</b>：不能槓上家棄牌，只能槓其他家</li>
+          <li><b>暗槓</b>：摸牌時手上已有 4 張</li>
+          <li><b>留局</b>：牌牆剩 16 張時不能繼續摸牌</li>
+        </ul>
+        <h3>計分（台數）</h3>
+        <table class="rules-table">
+          <tr><th>牌型</th><th>台數</th></tr>
+          <tr><td>底台</td><td>1台</td></tr>
+          <tr><td>自摸</td><td>+1台</td></tr>
+          <tr><td>門前清（無吃碰槓）</td><td>+1台</td></tr>
+          <tr><td>花牌</td><td>每張 +1台</td></tr>
+          <tr><td>平胡（全順子）</td><td>+1台</td></tr>
+          <tr><td>碰碰胡（全刻子）</td><td>+2台</td></tr>
+          <tr><td>混一色</td><td>+2台</td></tr>
+          <tr><td>清一色</td><td>+4台</td></tr>
+          <tr><td>字一色</td><td>+4台</td></tr>
+          <tr><td>一條龍（1-9同花色）</td><td>+3台</td></tr>
+          <tr><td>小三元</td><td>+2台</td></tr>
+          <tr><td>大三元</td><td>+4台</td></tr>
+        </table>
+      </div>
+
+      <!-- 美國麻將 -->
+      <div id="rules-american" class="rules-content" style="display:none">
+        <h3>特殊規則：換三張</h3>
+        <ul>
+          <li>發牌完成後，進行 <b>兩輪換牌</b></li>
+          <li><b>第一輪</b>：每人選 3 張牌，傳給<b>下家</b>（逆時針方向）</li>
+          <li><b>第二輪</b>：再選 3 張牌，傳給<b>對家</b></li>
+          <li>換牌完成後才開始正常出牌流程</li>
+          <li>其餘規則與台灣麻將相同</li>
+        </ul>
+        <h3>換牌順序圖解</h3>
+        <div class="rules-diagram">
+          <div>第一輪：東→北→西→南→東（往左傳）</div>
+          <div>第二輪：東↔西，南↔北（對家互傳）</div>
+        </div>
+        <p style="color:#ffcc02;margin-top:12px;">⚠️ 此模式開發中，敬請期待</p>
+      </div>
+
+      <!-- 港式台麻 -->
+      <div id="rules-hk" class="rules-content" style="display:none">
+        <h3>港式台麻計分表（部分）</h3>
+        <p style="color:#a5d6a7;font-size:12px;margin-bottom:8px;">以下為主要番種，詳細規則持續更新中</p>
+        <table class="rules-table">
+          <tr><th>牌型</th><th>英文</th><th>台數</th></tr>
+          <tr><td>自摸</td><td>Self Pick</td><td>1</td></tr>
+          <tr><td>無花花牌</td><td>No Flower</td><td>1</td></tr>
+          <tr><td>一台花</td><td>Set of Flower</td><td>10</td></tr>
+          <tr><td>搶槓</td><td>Steal Gong</td><td>1</td></tr>
+          <tr><td>明槓</td><td>Gong</td><td>1</td></tr>
+          <tr><td>暗槓</td><td>Hidden Gong</td><td>2</td></tr>
+          <tr><td>三元牌（中發白）</td><td>Red/Green/White</td><td>2</td></tr>
+          <tr><td>無字花</td><td>No Flower No Letter</td><td>5</td></tr>
+          <tr><td>平胡</td><td>Ping-hu</td><td>5</td></tr>
+          <tr><td>碰碰胡</td><td>All Pongs</td><td>30</td></tr>
+          <tr><td>混一色</td><td>Mix One Color</td><td>30/80</td></tr>
+          <tr><td>清一色</td><td>Pure One Color</td><td>100+</td></tr>
+          <tr><td>字一色</td><td>All Letters</td><td>100</td></tr>
+          <tr><td>大三元</td><td>Big 3 Dollars</td><td>40</td></tr>
+          <tr><td>小三元</td><td>Small 3 Dollars</td><td>20</td></tr>
+          <tr><td>一條龍</td><td>Pure Dragon</td><td>10</td></tr>
+        </table>
+        <p style="color:#ffcc02;margin-top:12px;">⚠️ 此模式開發中，詳細規則會持續補充</p>
+      </div>
+
+    </div>
   </div>
 </div>
 

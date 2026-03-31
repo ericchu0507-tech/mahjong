@@ -476,9 +476,28 @@ async function loadLeaderboard() {
 // ==========================================
 function doCreateRoom() {
   if (!socket) return;
-  const name    = document.getElementById('room-name').value.trim();
-  const baseBet = document.getElementById('room-bet').value;
-  socket.emit('room:create', { name, baseBet: Number(baseBet) });
+  const name      = document.getElementById('room-name').value.trim();
+  const baseBet   = document.getElementById('room-bet').value;
+  const ruleset   = document.getElementById('room-ruleset').value;
+  const allowBots = document.getElementById('room-allow-bots').checked;
+  socket.emit('room:create', { name, baseBet: Number(baseBet), ruleset, allowBots });
+}
+
+// ==========================================
+// 規則說明 Modal
+// ==========================================
+function showRulesModal() {
+  document.getElementById('rules-modal').style.display = 'flex';
+}
+function hideRulesModal() {
+  document.getElementById('rules-modal').style.display = 'none';
+}
+function switchRulesTab(tab, btn) {
+  ['taiwan','american','hk'].forEach(t => {
+    document.getElementById(`rules-${t}`).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.rules-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
 }
 
 function doJoinRoom(roomId) {
