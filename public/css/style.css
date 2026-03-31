@@ -23,7 +23,7 @@ body {
    遊戲主容器 — 3x3 Grid 佈局
    ========================================== */
 #game-container {
-  width: 1300px;
+  width: 1500px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: 1fr;
