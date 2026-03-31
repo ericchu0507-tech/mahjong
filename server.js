@@ -162,7 +162,10 @@ io.on('connection', (socket) => {
     io.to(room.id).emit('room:update', { room: roomToClient(room) });
 
     const minPlayers = 2; // 改成 4 正式四人對戰
-    if (room.players.length >= minPlayers && room.players.every(p => p.ready)) {
+    const humanPlayers = room.players.filter(p => !p.isBot);
+    const allReady = humanPlayers.length >= minPlayers && humanPlayers.every(p => p.ready);
+    const canFill  = humanPlayers.length >= 1 && humanPlayers.every(p => p.ready) && room.allowBots;
+    if (allReady || canFill) {
       startGame(room.id);
     }
   });
