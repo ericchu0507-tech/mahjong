@@ -93,17 +93,19 @@ io.on('connection', (socket) => {
   });
 
   // 建立房間
-  socket.on('room:create', ({ name, baseBet, ruleset, allowBots }) => {
+  socket.on('room:create', ({ name, baseBet, basePay, ruleset, allowBots }) => {
     const db      = getDB();
     const user    = db.queryOne(u => u.id === socket.userId);
     const roomId  = generateRoomId();
     const bet     = [1, 5, 10].includes(Number(baseBet)) ? Number(baseBet) : 1;
+    const pay     = Math.max(1, Math.min(99999, parseInt(basePay) || 100));
     const rules   = ['taiwan','american','hk'].includes(ruleset) ? ruleset : 'taiwan';
 
     const room = {
       id:         roomId,
       name:       name || `${socket.username}的房間`,
       baseBet:    bet,
+      basePay:    pay,
       ruleset:    rules,
       allowBots:  allowBots !== false,
       status:     'waiting',
@@ -204,6 +206,7 @@ function roomToClient(room) {
     id:       room.id,
     name:     room.name,
     base_bet: room.baseBet,
+    base_pay: room.basePay || 100,
     ruleset:  room.ruleset || 'taiwan',
     status:   room.status,
     players:  room.players.filter(p => !p.isBot).map(p => ({
@@ -227,7 +230,7 @@ function scheduleBotTurnIfNeeded(roomId) {
   const roomPlayer = room.players.find(p => p.userId === currentPlayer.userId);
   if (!roomPlayer?.isBot) return;
 
-  // 人機延遲 1.2 秒出牌
+  // 人機延遲 0.4 秒出牌
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
@@ -244,8 +247,8 @@ function scheduleBotTurnIfNeeded(roomId) {
     if (result.error) return;
 
     broadcastGameState(r, g);
-    scheduleNextTurnWithBotCheck(roomId, 3000);
-  }, 1200);
+    scheduleNextTurnWithBotCheck(roomId, 1500);
+  }, 400);
 }
 
 function scheduleNextTurnWithBotCheck(roomId, delay) {
@@ -370,14 +373,15 @@ function handleGameAction(roomId, userId, data) {
   let result;
 
   if (type === 'discard') {
+    clearAutoDiscard(roomId);
     result = game.discard(userId, data.tileId);
     if (result.error) return sendError(userId, room, result.error);
 
     // 廣播出牌
     broadcastGameState(room, game);
 
-    // 讓其他玩家有機會吃碰槓胡（延遲後若無回應自動過）
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 8000);
+    // 讓其他玩家有機會吃碰槓胡（10秒後若無回應自動過）
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 10000);
 
   } else if (type === 'pass') {
     clearRoomTimer(roomId);
@@ -472,6 +476,41 @@ function advanceTurn(roomId) {
   }
   broadcastGameState(room, game);
   scheduleBotTurnIfNeeded(roomId);
+  scheduleAutoDiscard(roomId);
+}
+
+// ── 15 秒自動出牌（真人超時） ──
+const autoDiscardTimers = new Map();
+function clearAutoDiscard(roomId) {
+  if (autoDiscardTimers.has(roomId)) {
+    clearTimeout(autoDiscardTimers.get(roomId));
+    autoDiscardTimers.delete(roomId);
+  }
+}
+function scheduleAutoDiscard(roomId) {
+  clearAutoDiscard(roomId);
+  const game = gameInstances.get(roomId);
+  const room = rooms.get(roomId);
+  if (!game || !room || game.phase !== 'playing') return;
+  const currentPlayer = game.players[game.currentSeat];
+  const roomPlayer = room.players.find(p => p.userId === currentPlayer?.userId);
+  if (roomPlayer?.isBot) return;
+  const seatSnapshot = game.currentSeat;
+  const timer = setTimeout(() => {
+    const g = gameInstances.get(roomId);
+    const r = rooms.get(roomId);
+    if (!g || !r || g.phase !== 'playing') return;
+    if (g.currentSeat !== seatSnapshot) return;
+    const player = g.players[g.currentSeat];
+    if (!player?.hand?.length) return;
+    const toDiscard = botSmartDiscard(player.hand);
+    if (!toDiscard) return;
+    const result = g.discard(player.userId, toDiscard.id);
+    if (result.error) return;
+    broadcastGameState(r, g);
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 10000);
+  }, 15000);
+  autoDiscardTimers.set(roomId, timer);
 }
 
 function broadcastGameState(room, game) {

@@ -354,8 +354,19 @@ function renderServerState(state) {
   const roundWindEl = document.getElementById('round-wind');
   if (roundWindEl) roundWindEl.textContent = windNames[state.roundWind] || '東';
 
+  // 剩餘牌數
+  const deckCountEl = document.getElementById('deck-count');
+  if (deckCountEl) deckCountEl.textContent = `剩 ${state.deckCount ?? '?'} 張`;
+
   // 動作提示 + 按鈕
   updateActionButtons(state);
+
+  // 15 秒倒數（我的回合才啟動）
+  if (state.currentSeat === state.mySeat && state.phase === 'playing' && !state.pendingDiscard) {
+    startTurnTimer(15);
+  } else {
+    stopTurnTimer();
+  }
 
   // 確保縮放正確（手牌渲染後重新量測）
   requestAnimationFrame(scaleGameToFit);
@@ -519,9 +530,10 @@ function doCreateRoom() {
   if (!socket) return;
   const name      = document.getElementById('room-name').value.trim();
   const baseBet   = document.getElementById('room-bet').value;
+  const basePay   = parseInt(document.getElementById('room-base-pay').value) || 100;
   const ruleset   = document.getElementById('room-ruleset').value;
   const allowBots = document.getElementById('room-allow-bots').checked;
-  socket.emit('room:create', { name, baseBet: Number(baseBet), ruleset, allowBots });
+  socket.emit('room:create', { name, baseBet: Number(baseBet), basePay, ruleset, allowBots });
 }
 
 // ==========================================
@@ -570,7 +582,7 @@ function doReady() {
 function renderRoomScreen(room) {
   if (!room) return;
   document.getElementById('room-title').textContent = room.name;
-  document.getElementById('room-bet-display').textContent = `$${room.base_bet}/台`;
+  document.getElementById('room-bet-display').textContent = `底台$${room.base_bet} / 每台$${room.base_pay || 100}`;
 
   const container = document.getElementById('room-players');
   const seats = [0, 1, 2, 3];
@@ -642,6 +654,41 @@ function onClientGang() {
     );
     if (four) sendGameAction('gang', { tileId: four.id });
   }
+}
+
+// ==========================================
+// 15 秒倒數 Timer
+// ==========================================
+let _turnTimerInterval = null;
+function startTurnTimer(seconds) {
+  stopTurnTimer();
+  const numEl  = document.getElementById('timer-num');
+  const ringEl = document.getElementById('timer-ring');
+  if (!numEl || !ringEl) return;
+
+  const total = seconds;
+  let remaining = total;
+  const circ = 94.2;
+
+  function tick() {
+    numEl.textContent = remaining;
+    const pct = remaining / total;
+    ringEl.style.strokeDashoffset = circ * (1 - pct);
+    const urgent = remaining <= 5;
+    numEl.classList.toggle('urgent', urgent);
+    ringEl.classList.toggle('urgent', urgent);
+    if (remaining <= 0) { stopTurnTimer(); return; }
+    remaining--;
+  }
+  tick();
+  _turnTimerInterval = setInterval(tick, 1000);
+}
+function stopTurnTimer() {
+  if (_turnTimerInterval) { clearInterval(_turnTimerInterval); _turnTimerInterval = null; }
+  const numEl  = document.getElementById('timer-num');
+  const ringEl = document.getElementById('timer-ring');
+  if (numEl)  { numEl.textContent = ''; numEl.classList.remove('urgent'); }
+  if (ringEl) { ringEl.style.strokeDashoffset = 0; ringEl.classList.remove('urgent'); }
 }
 
 // ==========================================

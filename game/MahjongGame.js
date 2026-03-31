@@ -161,7 +161,8 @@ function getTenpaiWaiting(hand) {
 class MahjongGame {
   constructor(room) {
     this.roomId  = room.id;
-    this.baseBet = room.baseBet || 1;
+    this.baseBet = room.baseBet  || 1;
+    this.basePay = room.basePay  || 100; // 每台金額
 
     // 四位玩家（依房間順序）
     this.players = room.players.map((p, i) => ({
@@ -330,28 +331,18 @@ class MahjongGame {
     if (!discard) return { error: '沒有待處理的牌' };
     if (countSame(player.hand, discard) < 2) return { error: '手牌不夠碰' };
 
-    // 移除兩張相同牌
+    // 從手牌移除兩張相同牌，組成面子
+    const meldTiles = [discard];
     let removed = 0;
     player.hand = player.hand.filter(t => {
       if (removed < 2 && t.suit === discard.suit && t.value === discard.value) {
-        removed++; return false;
+        meldTiles.push(t);
+        removed++;
+        return false;
       }
       return true;
     });
-    player.melds.push({ type: 'peng', tiles: [discard, ...player.hand.slice(0, 0)],
-      // 補齊三張
-      tiles: [{ ...discard }, { ...discard }, { ...discard }].map((t, i) => i === 0 ? discard : player.hand.find(() => false) || discard)
-    });
-    // 重新組正確的面子
-    const meldTiles = [];
-    const tempHand = [...player.hand];
-    meldTiles.push(discard);
-    for (let i = 0; i < 2; i++) {
-      const idx = tempHand.findIndex(t => t.suit === discard.suit && t.value === discard.value);
-      meldTiles.push(tempHand.splice(idx, 1)[0]);
-    }
-    player.hand = tempHand;
-    player.melds[player.melds.length - 1] = { type: 'peng', tiles: meldTiles };
+    player.melds.push({ type: 'peng', tiles: meldTiles });
 
     this.pendingDiscard  = null;
     this.pendingFromSeat = null;
@@ -455,7 +446,7 @@ class MahjongGame {
 
     const loserSeat = isSelfDraw ? null : this.pendingFromSeat;
     const { tai, reasons } = this.calcScore(seat, isSelfDraw, loserSeat);
-    const totalPay = tai * this.baseBet;
+    const totalPay = tai * this.basePay;
 
     if (isSelfDraw) {
       this.players.forEach((p, i) => {

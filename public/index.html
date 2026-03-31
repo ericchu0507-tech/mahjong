@@ -79,12 +79,16 @@
               <option value="hk">🇭🇰 港式台麻</option>
             </select>
           </label>
-          <label>底注：
+          <label>底台：
             <select id="room-bet">
-              <option value="1">$1 / 台</option>
-              <option value="5">$5 / 台</option>
-              <option value="10">$10 / 台</option>
+              <option value="1">$1</option>
+              <option value="5">$5</option>
+              <option value="10">$10</option>
             </select>
+          </label>
+          <label>每台金額：
+            <input type="number" id="room-base-pay" value="100" min="1" max="99999" step="1" style="width:90px">
+            元
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="room-allow-bots" checked>
@@ -162,12 +166,15 @@
           <div class="wall-col wall-left-col" id="wall-left"></div>
 
           <div class="play-zone">
-            <div class="wind-disc">
-              <div class="wind-center" id="round-wind">東</div>
-              <div class="wind-label wind-n">北</div>
-              <div class="wind-label wind-s">南</div>
-              <div class="wind-label wind-w">西</div>
-              <div class="wind-label wind-e">東</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="wind-disc">
+                <div class="wind-center" id="round-wind">東</div>
+                <div class="wind-label wind-n">北</div>
+                <div class="wind-label wind-s">南</div>
+                <div class="wind-label wind-w">西</div>
+                <div class="wind-label wind-e">東</div>
+              </div>
+              <div id="deck-count" style="font-size:13px;color:#ffcc02;background:rgba(0,0,0,0.45);border-radius:10px;padding:4px 10px;white-space:nowrap;"></div>
             </div>
             <div class="discard-area">
               <div class="discard-zone discard-top">
