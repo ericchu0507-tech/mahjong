@@ -191,6 +191,50 @@ io.on('connection', (socket) => {
     handleGameAction(socket.currentRoom, socket.userId, data);
   });
 
+  // 動畫播完，玩家準備好了 → 送遊戲初始狀態並開始計時
+  socket.on('game:ready', () => {
+    const roomId = socket.currentRoom;
+    if (!roomId) return;
+    const game = gameInstances.get(roomId);
+    const room = rooms.get(roomId);
+    if (!game || !room) return;
+    const state = game.getStateForPlayer(socket.userId);
+    socket.emit('game:start', state);
+    scheduleBotTurnIfNeeded(roomId);
+    scheduleAutoDiscard(roomId);
+  });
+
+  // 暫時休息（人機代打，但玩家仍在房間可隨時回來）
+  socket.on('game:temp_surrender', () => {
+    const roomId = socket.currentRoom;
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    const game = gameInstances.get(roomId);
+    if (!room || !game) return;
+    const rp = room.players.find(p => p.userId === socket.userId);
+    if (!rp) return;
+    rp.tempBot = true;
+    scheduleBotTurnIfNeeded(roomId);
+    socket.emit('game:temp_bot_on');
+    console.log(`[Game] ${rp.username} 暫時休息，人機代打`);
+  });
+
+  // 回來繼續
+  socket.on('game:resume', () => {
+    const roomId = socket.currentRoom;
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    const game = gameInstances.get(roomId);
+    if (!room || !game) return;
+    const rp = room.players.find(p => p.userId === socket.userId);
+    if (!rp) return;
+    rp.tempBot = false;
+    rp.socketId = socket.id; // 更新 socket
+    const state = game.getStateForPlayer(socket.userId);
+    socket.emit('game:resumed', state);
+    console.log(`[Game] ${rp.username} 回來繼續遊戲`);
+  });
+
   // 讓人機接手（中途離場）
   socket.on('game:surrender', () => {
     const roomId = socket.currentRoom;
@@ -253,9 +297,10 @@ function scheduleBotTurnIfNeeded(roomId) {
   if (!currentPlayer) return;
 
   const roomPlayer = room.players.find(p => p.userId === currentPlayer.userId);
-  if (!roomPlayer?.isBot) return;
+  // isBot 或暫時休息模式（tempBot）都讓人機代打
+  if (!roomPlayer?.isBot && !roomPlayer?.tempBot) return;
 
-  // 人機延遲 0.3 秒出牌
+  // 人機延遲 0.8 秒出牌（放慢一倍）
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
@@ -274,7 +319,7 @@ function scheduleBotTurnIfNeeded(roomId) {
     broadcastGameState(r, g);
     // 人機出牌後同樣給真人 30 秒吃碰視窗
     scheduleNextTurn(roomId, result.tile, result.fromSeat, 30000);
-  }, 400);
+  }, 800);
 }
 
 // ── Bot 吃碰決策 ──
@@ -349,7 +394,7 @@ function scheduleBotClaimIfNeeded(roomId) {
     // 沒有任何 bot 要吃碰：檢查真人玩家是否有任何可行動作
     let humanCanAct = false;
     for (const rp of r.players) {
-      if (rp.isBot) continue;
+      if (rp.isBot || rp.tempBot) continue; // 人機或暫時休息都跳過
       const seat2 = g.players.findIndex(p => p.userId === rp.userId);
       if (seat2 === fromSeat) continue; // 出牌者不算
       const hp = g.players[seat2];
@@ -453,18 +498,15 @@ function startGame(roomId) {
     io.to(p.socketId).emit('game:intro', intro);
   });
 
-  // 7 秒後才正式開始（等抽風＋骰子動畫完成）
+  // Client 端動畫完成後發 game:ready，server 才送 game:start
+  // 這裡設 12 秒保底，防止 client 沒收到 intro（如重連）
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
     if (!g || !r) return;
-    r.players.filter(p => !p.isBot).forEach(p => {
-      const state = g.getStateForPlayer(p.userId);
-      io.to(p.socketId).emit('game:start', state);
-    });
     scheduleBotTurnIfNeeded(roomId);
     scheduleAutoDiscard(roomId);
-  }, 4000);
+  }, 12000);
 }
 
 function handleGameAction(roomId, userId, data) {

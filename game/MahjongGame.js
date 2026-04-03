@@ -400,10 +400,29 @@ class MahjongGame {
     const seat   = this.getSeat(userId);
     const player = this.players[seat];
 
-    // 暗槓（手牌有四張）
+    // 我的回合（無待處理棄牌）
     if (!this.pendingDiscard) {
       const tile = player.hand.find(t => t.id === tileId);
       if (!tile) return { error: '找不到這張牌' };
+
+      // 加槓：手上有對應碰牌
+      const pengIdx = player.melds.findIndex(
+        m => m.type === 'peng' && m.tiles[0].suit === tile.suit && m.tiles[0].value === tile.value
+      );
+      if (pengIdx !== -1) {
+        player.hand = player.hand.filter(t => t.id !== tile.id);
+        player.melds[pengIdx].type = 'jiagang';
+        player.melds[pengIdx].tiles.push(tile);
+        const drawn = this._drawFromEnd(seat);
+        this.drawnTile = drawn;
+        if (drawn && drawn.isFlower) {
+          player.flowers.push(player.hand.pop());
+          this.drawnTile = this._drawFromEnd(seat);
+        }
+        return { ok: true, type: 'jiagang', meld: player.melds[pengIdx], drawn: this.drawnTile };
+      }
+
+      // 暗槓：手牌有四張
       if (countSame(player.hand, tile) < 4) return { error: '手牌不夠暗槓' };
       const meldTiles = player.hand.filter(t => t.suit === tile.suit && t.value === tile.value);
       player.hand = player.hand.filter(t => !(t.suit === tile.suit && t.value === tile.value));
@@ -475,10 +494,22 @@ class MahjongGame {
     this.lastWinnerUserId = userId;
     this.phase = 'ended';
 
+    // 組合贏家手牌（包含胡的那張）
+    const winnerHand = this.pendingDiscard
+      ? [...player.hand, this.pendingDiscard]
+      : [...player.hand];
+
     return {
       ok: true, isSelfDraw, tai, reasons,
       totalPay, loserSeat,
       winnerSeat: seat,
+      winnerName:    player.username,
+      loserName:     loserSeat !== null ? this.players[loserSeat].username : null,
+      winnerHand,
+      winnerMelds:   player.melds,
+      winnerFlowers: player.flowers,
+      winningTile:   this.pendingDiscard || this.drawnTile,
+      playerNames:   this.players.map(p => p.username),
       scores: this.players.map(p => ({ userId: p.userId, score: p.score })),
     };
   }

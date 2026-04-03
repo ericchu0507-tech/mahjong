@@ -199,6 +199,23 @@ function connectSocket() {
     renderServerState(state);
   });
 
+  // 暫時休息確認
+  socket.on('game:temp_bot_on', () => {
+    const btn = document.getElementById('btn-resume-game');
+    if (btn) { btn.style.display = 'inline-block'; }
+    const leaveBtn = document.getElementById('btn-leave-game-temp');
+    if (leaveBtn) leaveBtn.textContent = '人機代打中…';
+  });
+
+  // 回來繼續
+  socket.on('game:resumed', (state) => {
+    const btn = document.getElementById('btn-resume-game');
+    if (btn) { btn.style.display = 'none'; }
+    const leaveBtn = document.getElementById('btn-leave-game-temp');
+    if (leaveBtn) leaveBtn.textContent = '暫時休息';
+    renderServerState(state);
+  });
+
   // 遊戲狀態更新
   socket.on('game:state', (state) => {
     renderServerState(state);
@@ -206,27 +223,58 @@ function connectSocket() {
 
   // 有人胡牌
   socket.on('game:hu', (result) => {
-    const winnerPlayer = result.players
-      ? result.players.find((_, i) => i === result.winnerSeat)
-      : null;
-    const winnerName = winnerPlayer?.username || '玩家';
-    const isSelf = result.winnerSeat === (window._myGameSeat || 0);
-    const title  = isSelf
-      ? (result.isSelfDraw ? '🎉 你自摸！' : '🎉 你胡牌！')
+    const mySeat     = window._myGameSeat || 0;
+    const isSelf     = result.winnerSeat === mySeat;
+    const winnerName = result.winnerName || '玩家';
+    const title      = isSelf
+      ? (result.isSelfDraw ? '自摸！' : '胡牌！')
       : `${winnerName} 胡牌了！`;
 
-    const detail = [
-      result.reasons?.join('、') || '',
-      `共 ${result.tai} 台 × $${result.totalPay / result.tai} = $${result.totalPay}`,
-      '─────',
-      result.scores?.map(s => {
-        const p = socket._roomPlayers?.find(pl => pl.userId === s.userId);
-        return `${p?.username || s.userId}：$${s.score}`;
-      }).join('　') || '',
-    ].join('\n');
+    // 台數與放槍資訊
+    let payLine = `${result.reasons?.join('、') || '底台'}，共 ${result.tai} 台 × $${result.totalPay / result.tai} = $${result.totalPay}`;
+    if (result.isSelfDraw) {
+      payLine += '<br>自摸：三家各付';
+    } else {
+      payLine += `<br><span style="color:#ff6b6b;">放槍：${result.loserName || '?'}</span>`;
+    }
+
+    // 分數列（顯示誰贏誰輸）
+    const scoreHtml = (result.scores || []).map((s, i) => {
+      const name  = result.playerNames?.[i] || `玩家${i+1}`;
+      const prev  = window._lastGameState?.players?.[i]?.score;
+      const diff  = prev !== undefined ? s.score - prev : 0;
+      const sign  = diff >= 0 ? `<span style="color:#4caf50;">+${diff}</span>` : `<span style="color:#f44336;">${diff}</span>`;
+      const badge = i === result.winnerSeat ? '🏆' : i === result.loserSeat ? '🎯' : '';
+      return `<span>${badge}${name}：$${s.score}（${sign}）</span>`;
+    }).join('&nbsp;&nbsp;');
+
+    // 贏家牌型
+    let tilesHtml = '';
+    if (result.winnerMelds?.length || result.winnerHand?.length) {
+      tilesHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin:10px 0;align-items:flex-end;">';
+      (result.winnerMelds || []).forEach(meld => {
+        tilesHtml += '<div style="display:flex;gap:2px;background:rgba(255,255,255,0.1);border-radius:4px;padding:2px;">';
+        meld.tiles.forEach((tile, ti) => {
+          const faceDown = (meld.type === 'angang') && (ti === 0 || ti === 3);
+          tilesHtml += createTileElement(tile, faceDown, true).outerHTML;
+        });
+        tilesHtml += '</div>';
+      });
+      tilesHtml += '<div style="display:flex;gap:2px;">';
+      (result.winnerHand || []).forEach(tile => {
+        const el = createTileElement(tile, false, true);
+        if (result.winningTile && tile.id === result.winningTile.id) {
+          el.style.outline = '2px solid #ffcc02';
+          el.style.outlineOffset = '2px';
+        }
+        tilesHtml += el.outerHTML;
+      });
+      tilesHtml += '</div></div>';
+    }
 
     document.getElementById('win-title').textContent = title;
-    document.getElementById('win-detail').innerHTML  = detail.replace(/\n/g, '<br>');
+    document.getElementById('win-detail').innerHTML  =
+      payLine + tilesHtml + '<div style="margin-top:8px;font-size:13px;">' + scoreHtml + '</div>';
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
@@ -256,8 +304,14 @@ function sendGameAction(type, extra = {}) {
   if (socket) socket.emit('game:action', { type, ...extra });
 }
 
+function onTempSurrender() {
+  if (socket) socket.emit('game:temp_surrender');
+}
+function onResumeGame() {
+  if (socket) socket.emit('game:resume');
+}
 function onSurrenderGame() {
-  if (!confirm('確定離開遊戲？你的位置將由人機接手繼續遊戲。')) return;
+  if (!confirm('確定永久離開遊戲？你的位置將由人機接手。')) return;
   if (socket) socket.emit('game:surrender');
 }
 
@@ -414,6 +468,18 @@ function updateActionButtons(state) {
     if (myHand.length % 3 === 2) {
       const huEl = document.getElementById('btn-hu');
       if (huEl) { huEl.disabled = false; }
+    }
+    // 槓牌檢查：暗槓（手上4張）或加槓（摸到碰牌的第四張）
+    const drawn = state.drawnTile;
+    const canAngang = myHand.some(tile =>
+      myHand.filter(t => t.suit === tile.suit && t.value === tile.value).length >= 4
+    );
+    const canJiagang = drawn && me?.melds?.some(m =>
+      m.type === 'peng' && m.tiles[0].suit === drawn.suit && m.tiles[0].value === drawn.value
+    );
+    if (canAngang || canJiagang) {
+      const gangEl = document.getElementById('btn-gang');
+      if (gangEl) gangEl.disabled = false;
     }
   } else if (hasPending && state.pendingFromSeat !== state.mySeat) {
     // 有人出牌，我可能可以吃碰槓胡
@@ -857,7 +923,7 @@ function showDicePhase(el, intro, diceFaces, diceSum) {
     <div id="dice-waiting" style="font-size:13px;color:#666;animation:blink 1s infinite;margin-top:8px;">遊戲即將開始...</div>
   `;
 
-  // 骰子滾動 1.5 秒後停止，結果顯示 3 秒
+  // 骰子滾動 1.5 秒後停止，停留 3 秒，然後通知 server 準備好了
   const diceEls = el.querySelectorAll('.intro-dice');
   setTimeout(() => {
     diceEls.forEach((d, i) => {
@@ -866,7 +932,13 @@ function showDicePhase(el, intro, diceFaces, diceSum) {
     });
     el.querySelector('#dice-sum').textContent = `點數合計：${diceSum}`;
     const waiting = el.querySelector('#dice-waiting');
-    if (waiting) waiting.textContent = '請記住各家風位，遊戲即將開始...';
+    if (waiting) waiting.textContent = '請記住各家風位...';
+
+    // 停留 3 秒後告知 server 開始遊戲
+    setTimeout(() => {
+      if (waiting) waiting.textContent = '遊戲即將開始！';
+      if (socket) socket.emit('game:ready');
+    }, 3000);
   }, 1500);
 }
 
