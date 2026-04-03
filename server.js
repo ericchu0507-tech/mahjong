@@ -319,6 +319,28 @@ function scheduleBotClaimIfNeeded(roomId) {
         }
       }
     }
+
+    // 沒有任何 bot 要吃碰：
+    // - 若下一家是真人，繼續等待（玩家可手動過）
+    // - 若下一家是 bot，直接推進
+    const nextRpCheck = r.players.find(x => x.userId === g.players[nextSeat]?.userId);
+    const humanCanChi = !nextRpCheck?.isBot;
+
+    // 檢查是否有任何真人可以碰/胡（任意座位）
+    const humanCanClaim = r.players.some(rp => {
+      if (rp.isBot) return false;
+      const seat2 = g.players.findIndex(p => p.userId === rp.userId);
+      if (seat2 === fromSeat) return false;
+      const p2 = g.players[seat2];
+      return canWin([...p2.hand, discard]) || countSame(p2.hand, discard) >= 2;
+    });
+
+    if (!humanCanChi && !humanCanClaim) {
+      // 全部都是 bot 或真人沒機會，直接推進
+      clearRoomTimer(roomId);
+      advanceTurn(roomId);
+    }
+    // 否則繼續等玩家手動決定（過/吃/碰/胡）
   }, 800);
 }
 
