@@ -181,7 +181,8 @@ class MahjongGame {
     this.discardPiles = [[], [], [], []]; // index = seat
     this.currentSeat  = 0;   // 目前輪到的座位
     this.dealer       = 0;   // 莊家座位
-    this.roundWind    = 'dong';
+    this.roundWindIdx = room.roundWindIdx || 0;
+    this.roundWind    = ['dong','nan','xi','bei'][this.roundWindIdx] || 'dong';
     this.phase        = 'setup';
     this.drawnTile    = null;
     this.pendingDiscard = null;
@@ -205,14 +206,26 @@ class MahjongGame {
   }
 
   // ── 開始遊戲 ──
-  start() {
-    // 隨機決定風位
-    const winds = ['dong','nan','xi','bei'];
-    for (let i = winds.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [winds[i], winds[j]] = [winds[j], winds[i]];
+  // fixedWindOrder: [userId東, userId南, userId西, userId北]（第二局以後傳入，保持輪莊順序）
+  start(fixedWindOrder = null) {
+    if (fixedWindOrder && fixedWindOrder.length === 4) {
+      // 依固定順序指定風位
+      const winds = ['dong','nan','xi','bei'];
+      fixedWindOrder.forEach((userId, i) => {
+        const p = this.players.find(p => p.userId === userId);
+        if (p) p.wind = winds[i];
+      });
+      // 防呆：若有玩家沒被分配到風位
+      this.players.forEach(p => { if (!p.wind) p.wind = 'dong'; });
+    } else {
+      // 第一局：隨機決定風位
+      const winds = ['dong','nan','xi','bei'];
+      for (let i = winds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [winds[i], winds[j]] = [winds[j], winds[i]];
+      }
+      this.players.forEach((p, i) => { p.wind = winds[i]; });
     }
-    this.players.forEach((p, i) => { p.wind = winds[i]; });
 
     // 依風位排序玩家：東(0)→南(1)→西(2)→北(3)
     // 這樣 (seat+1)%4 就是下家、棄牌/出牌順序自動正確
@@ -684,6 +697,8 @@ class MahjongGame {
       currentSeat: this.currentSeat,
       dealer:      this.dealer,
       roundWind:   this.roundWind,
+      roundWindIdx: this.roundWindIdx,
+      dealerStreak: this.dealerStreak,
       deckCount:   this.deck.length,
       pendingDiscard:  this.pendingDiscard,
       pendingFromSeat: this.pendingFromSeat,
@@ -702,6 +717,12 @@ class MahjongGame {
       mySeat,
       myHand:   this.players[mySeat].hand,
       drawnTile: mySeat === this.currentSeat ? this.drawnTile : null,
+      // 聽牌偵測：手牌 3n+1 時計算等待牌
+      tenpaiWaiting: (() => {
+        const h = this.players[mySeat].hand;
+        return (h.length % 3 === 1 && this.phase !== 'ended')
+          ? getTenpaiWaiting(h) : [];
+      })(),
     };
   }
 

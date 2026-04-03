@@ -171,6 +171,7 @@
                 <div class="wind-label wind-e">東</div>
               </div>
               <div id="deck-count" style="font-size:13px;color:#ffcc02;background:rgba(0,0,0,0.45);border-radius:10px;padding:4px 10px;white-space:nowrap;"></div>
+              <div id="game-round-info" style="font-size:11px;color:#aaa;background:rgba(0,0,0,0.35);border-radius:8px;padding:3px 8px;white-space:nowrap;"></div>
             </div>
             <div class="discard-area">
               <div class="discard-zone discard-top">
@@ -248,12 +249,20 @@
       <button id="btn-resume-game" onclick="onResumeGame()" style="display:none;background:rgba(30,100,60,0.8);color:#7f7;border:1px solid #4a8;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;">回來繼續</button>
       <button onclick="onSurrenderGame()" style="background:rgba(80,30,30,0.8);color:#faa;border:1px solid #855;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;">離開遊戲</button>
     </div>
+    <div id="tenpai-hint" style="display:none;font-size:12px;color:#ffcc02;background:rgba(0,0,0,0.5);border-radius:8px;padding:3px 10px;margin:2px 0;text-align:center;"></div>
     <div class="hand-row">
       <div class="flower-area" id="flowers-bottom"></div>
       <div class="my-melds" id="my-melds"></div>
       <div class="hand hand-bottom" id="my-hand"></div>
     </div>
   </div>
+
+<!-- 通知 Toast -->
+<div id="game-toast" style="display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);
+  background:rgba(30,30,50,0.95);color:#fff;padding:10px 22px;border-radius:20px;
+  font-size:15px;font-weight:bold;z-index:9999;pointer-events:none;
+  border:1px solid rgba(255,255,255,0.15);box-shadow:0 4px 16px rgba(0,0,0,0.5);
+  white-space:nowrap;"></div>
 
 </div>
 

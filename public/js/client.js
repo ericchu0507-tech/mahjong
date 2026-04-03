@@ -293,19 +293,50 @@ function connectSocket() {
       </div>`;
     });
 
+    // 進程資訊（圈風 / 連莊）
+    const prog = result.progression;
+    window._gameProgression = prog;
+    let progressLine = '';
+    if (prog) {
+      const RW = ['東','南','西','北'];
+      const roundName  = (RW[prog.roundWindIdx] || '東') + '風圈';
+      const streakText = prog.dealerStreak > 0 ? `連莊${prog.dealerStreak}` : '';
+      const nextLabel  = prog.gameOver ? '一將完成！' : `下一局${streakText ? '（'+streakText+'）' : ''}`;
+      progressLine = `<div style="font-size:12px;color:#aaa;text-align:center;margin-top:10px;">${roundName}　${nextLabel}</div>`;
+    }
+
+    // 更新下一局按鈕文字
+    const continueBtn = document.getElementById('btn-continue-game');
+    if (continueBtn) {
+      continueBtn.textContent = prog?.gameOver ? '查看總結算' : '下一局';
+    }
+
     document.getElementById('win-title').textContent = title;
     document.getElementById('win-detail').innerHTML  =
       payLine +
       '<div style="margin:10px 0;border-top:1px solid rgba(255,255,255,0.15);padding-top:8px;">' +
       allHandsHtml + '</div>' +
-      '<div style="margin-top:8px;font-size:13px;">' + scoreHtml + '</div>';
+      '<div style="margin-top:8px;font-size:13px;">' + scoreHtml + '</div>' +
+      progressLine;
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
   // 留局/流局
-  socket.on('game:ended', ({ reason }) => {
+  socket.on('game:ended', ({ reason, progression }) => {
+    window._gameProgression = progression;
+    const RW = ['東','南','西','北'];
+    let progressLine = '';
+    if (progression) {
+      const roundName  = (RW[progression.roundWindIdx] || '東') + '風圈';
+      const nextLabel  = progression.gameOver ? '一將完成！' : '下一局';
+      progressLine = `<div style="font-size:12px;color:#aaa;margin-top:8px;">${roundName}　${nextLabel}</div>`;
+    }
+    const continueBtn = document.getElementById('btn-continue-game');
+    if (continueBtn) {
+      continueBtn.textContent = progression?.gameOver ? '查看總結算' : '下一局';
+    }
     document.getElementById('win-title').textContent = reason === '留局' ? '留局' : '流局';
-    document.getElementById('win-detail').innerHTML  = '牌已用完，重新開局';
+    document.getElementById('win-detail').innerHTML  = '牌已用完，重新開局' + progressLine;
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
@@ -318,6 +349,56 @@ function connectSocket() {
 
   socket.on('error', ({ message }) => {
     alert('⚠️ ' + message);
+  });
+
+  // 一將結束
+  socket.on('game:tournament_end', ({ players }) => {
+    const sorted = [...players].sort((a, b) => b.score - a.score);
+    const MEDALS = ['🥇','🥈','🥉','  '];
+    const COLORS  = ['#ffd700','#c0c0c0','#cd7f32','#888'];
+    const STARTS  = 1000; // 起始積分
+
+    const rows = sorted.map((p, i) => {
+      const diff  = p.score - STARTS;
+      const sign  = diff >= 0 ? `+${diff}` : `${diff}`;
+      const color = diff >= 0 ? '#4caf50' : '#f44336';
+      return `
+        <div style="display:flex;align-items:center;gap:12px;margin:7px 0;
+          background:rgba(255,255,255,0.06);border-radius:10px;padding:10px 16px;">
+          <div style="font-size:28px;min-width:36px;text-align:center;">${MEDALS[i]}</div>
+          <div style="flex:1;text-align:left;">
+            <div style="font-size:15px;font-weight:bold;color:${COLORS[i]}">${escHtml(p.username)}</div>
+            ${p.isBot ? '<div style="font-size:11px;color:#666;">人機</div>' : ''}
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:18px;font-weight:bold;">$${p.score}</div>
+            <div style="font-size:12px;color:${color};">${sign}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('win-title').textContent = '🎊 一將完成！';
+    document.getElementById('win-detail').innerHTML  =
+      `<div style="font-size:12px;color:#aaa;margin-bottom:6px;">最終排名（起始 $${STARTS}）</div>${rows}`;
+    window._gameProgression = { gameOver: true };
+    const continueBtn = document.getElementById('btn-continue-game');
+    if (continueBtn) continueBtn.style.display = 'none';
+    document.getElementById('win-overlay').style.display = 'flex';
+  });
+
+  // 按鈕接線：下一局 / 回大廳
+  document.getElementById('btn-continue-game')?.addEventListener('click', () => {
+    document.getElementById('win-overlay').style.display = 'none';
+    document.getElementById('btn-continue-game').style.display = '';
+    if (window._gameProgression?.gameOver) {
+      showLobby();
+    } else {
+      if (socket) socket.emit('room:next_round');
+    }
+  });
+  document.getElementById('btn-play-again')?.addEventListener('click', () => {
+    document.getElementById('win-overlay').style.display = 'none';
+    showLobby();
   });
 }
 
@@ -444,6 +525,17 @@ function renderServerState(state) {
   const roundWindEl = document.getElementById('round-wind');
   if (roundWindEl) roundWindEl.textContent = windNames[state.roundWind] || '東';
 
+  // 回合進程資訊（圈風 / 莊家 / 連莊）
+  const roundInfoEl = document.getElementById('game-round-info');
+  if (roundInfoEl) {
+    const RW_NAMES = ['東','南','西','北'];
+    const circleWind = RW_NAMES[state.roundWindIdx || 0] + '風圈';
+    const dealerWind = windNames[state.players[state.dealer]?.wind] || '?';
+    const streak     = state.dealerStreak || 0;
+    const streakTxt  = streak > 0 ? ` 連${streak}` : '';
+    roundInfoEl.textContent = `${circleWind} 莊：${dealerWind}${streakTxt}`;
+  }
+
   // 剩餘牌數
   const deckCountEl = document.getElementById('deck-count');
   if (deckCountEl) deckCountEl.textContent = `剩 ${state.deckCount ?? '?'} 張`;
@@ -451,7 +543,34 @@ function renderServerState(state) {
   // 動作提示 + 按鈕
   updateActionButtons(state);
 
-  // 倒數只給 AI 看（玩家不顯示）
+  // ── 補花通知（花牌張數增加時）──
+  if (!window._prevFlowerCounts) window._prevFlowerCounts = {};
+  state.players.forEach(p => {
+    const prev = window._prevFlowerCounts[p.userId] ?? -1;
+    const curr = p.flowers?.length || 0;
+    if (prev >= 0 && curr > prev) {
+      const who = p.userId === currentUser?.id ? '你' : p.username;
+      showToast(`🌸 ${who} 補花！`);
+    }
+    window._prevFlowerCounts[p.userId] = curr;
+  });
+
+  // ── 聽牌提示（只顯示給自己）──
+  const tenpaiEl = document.getElementById('tenpai-hint');
+  if (tenpaiEl) {
+    const waiting = state.tenpaiWaiting;
+    if (waiting && waiting.length > 0) {
+      const ZI_CH  = { dong:'東',nan:'南',xi:'西',bei:'北',zhong:'中',fa:'發',bai:'白' };
+      const SUIT_CH = { wan:'萬', tiao:'條', tong:'筒' };
+      const names = waiting.map(t =>
+        t.suit === 'zi' ? (ZI_CH[t.value] || t.value) : `${t.value}${SUIT_CH[t.suit] || ''}`
+      ).join('、');
+      tenpaiEl.textContent = `聽牌 🀄 等待：${names}`;
+      tenpaiEl.style.display = 'block';
+    } else {
+      tenpaiEl.style.display = 'none';
+    }
+  }
 
   // 確保縮放正確（手牌渲染後重新量測）
   requestAnimationFrame(scaleGameToFit);
@@ -998,6 +1117,23 @@ function revealAllHands(result) {
 function hideIntroAnimation() {
   const el = document.getElementById('intro-overlay');
   if (el) el.remove();
+}
+
+// ==========================================
+// Toast 通知
+// ==========================================
+let _toastTimer = null;
+function showToast(msg, duration = 2200) {
+  const el = document.getElementById('game-toast');
+  if (!el) return;
+  if (_toastTimer) { clearTimeout(_toastTimer); }
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.opacity = '1';
+  _toastTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => { el.style.display = 'none'; }, 300);
+  }, duration);
 }
 
 // ==========================================

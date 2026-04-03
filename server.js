@@ -107,7 +107,11 @@ io.on('connection', (socket) => {
       baseTai:      tai,
       basePay:      pay,
       ruleset:      rules,
-      dealerStreak: 0,
+      dealerStreak:    0,
+      windOrderUserIds: [],  // [東userId, 南userId, 西userId, 北userId]，每局記錄
+      roundWindIdx:    0,    // 0=東風圈, 1=南風圈, 2=西風圈, 3=北風圈
+      dealerRotations: 0,    // 累計換莊次數（每4次換一個圈風）
+      gameOver:        false, // 四圈打完 = 一將
       allowBots:  allowBots !== false,
       status:     'waiting',
       hostId:     socket.userId,
@@ -261,6 +265,26 @@ io.on('connection', (socket) => {
     console.log(`[Game] ${rp.username} 讓人機接手`);
   });
 
+  // 下一局（留在同一房間，直接開始）
+  socket.on('room:next_round', () => {
+    const roomId = socket.currentRoom;
+    const room   = rooms.get(roomId);
+    if (!room || room.status === 'playing') return;
+
+    if (room.gameOver) {
+      // 一將完成，發送最終結算
+      io.to(roomId).emit('game:tournament_end', {
+        players: room.players.map(p => ({
+          userId: p.userId, username: p.username,
+          score:  p.score,  isBot:   p.isBot,
+        })),
+      });
+      return;
+    }
+
+    startGame(roomId);
+  });
+
   // 斷線
   socket.on('disconnect', () => {
     console.log(`[Socket] ${socket.username} 斷線`);
@@ -353,10 +377,11 @@ function scheduleBotClaimIfNeeded(roomId) {
           const db = getDB();
           res.scores.forEach(({ userId: uid, score }) => {
             db.updateUser(uid, { score });
+            const rp2 = r.players.find(x => x.userId === uid);
+            if (rp2) rp2.score = score;
           });
-          if (res.winnerSeat === g.dealer) r.dealerStreak = (r.dealerStreak||0)+1;
-          else r.dealerStreak = 0;
-          io.to(roomId).emit('game:hu', { ...res, roomId });
+          const progression = handleGameProgression(r, g, res.winnerSeat);
+          io.to(roomId).emit('game:hu', { ...res, roomId, progression });
           gameInstances.delete(roomId);
           r.status = 'waiting';
           return;
@@ -497,7 +522,11 @@ function startGame(roomId) {
 
   const game = new MahjongGame(room);
   gameInstances.set(roomId, game);
-  game.start();
+  // 第一局 windOrderUserIds 為空 → 隨機分風；後續局傳入固定順序實現輪莊
+  game.start(room.windOrderUserIds.length === 4 ? room.windOrderUserIds : null);
+
+  // 記錄本局的風位順序（東→南→西→北 的 userId），供下一局輪莊用
+  room.windOrderUserIds = game.players.map(p => p.userId);
 
   io.emit('lobby:list', getLobbyList());
   console.log(`[Game] Room ${roomId} 遊戲開始（${room.players.filter(p=>p.isBot).length} 個人機）`);
@@ -586,22 +615,20 @@ function handleGameAction(roomId, userId, data) {
     result = game.hu(userId);
     if (result.error) return sendError(userId, room, result.error);
 
-    // 更新資料庫分數
+    // 更新資料庫分數，同步 room.players.score（下一局開始時讀取）
     const db = getDB();
     result.scores.forEach(({ userId: uid, score }) => {
       db.updateUser(uid, { score });
       if (uid === userId) db.updateUser(uid, { wins: (db.queryOne(u => u.id === uid)?.wins || 0) + 1 });
+      const rp = room.players.find(p => p.userId === uid);
+      if (rp) rp.score = score;
     });
     db.queryAll(null).forEach(u => db.updateUser(u.id, { games: (u.games || 0) + 1 }));
 
-    // 連莊追蹤
-    if (result.winnerSeat === game.dealer) {
-      room.dealerStreak = (room.dealerStreak || 0) + 1;
-    } else {
-      room.dealerStreak = 0;
-    }
+    // 連莊 / 輪莊 / 圈風
+    const progression = handleGameProgression(room, game, result.winnerSeat);
 
-    io.to(roomId).emit('game:hu', { ...result, roomId });
+    io.to(roomId).emit('game:hu', { ...result, roomId, progression });
     gameInstances.delete(roomId);
     if (room) room.status = 'waiting';
   }
@@ -636,8 +663,14 @@ function advanceTurn(roomId) {
 
   const result = game.nextTurn();
   if (result.ended) {
-    room.dealerStreak = (room.dealerStreak || 0) + 1;
-    io.to(roomId).emit('game:ended', { reason: result.reason });
+    // 留局：莊家留莊（winnerSeat = null）
+    const progression = handleGameProgression(room, game, null);
+    // 同步 room.players.score（留局無分數變化，但確保一致）
+    game.players.forEach(gp => {
+      const rp = room.players.find(p => p.userId === gp.userId);
+      if (rp) rp.score = gp.score;
+    });
+    io.to(roomId).emit('game:ended', { reason: result.reason, progression });
     gameInstances.delete(roomId);
     if (room) room.status = 'waiting';
     return;
@@ -704,6 +737,47 @@ function broadcastGameState(room, game) {
 function sendError(userId, room, message) {
   const p = room.players.find(pl => pl.userId === userId);
   if (p) io.to(p.socketId).emit('error', { message });
+}
+
+// ==========================================
+// 遊戲進程（連莊 / 輪莊 / 圈風）
+// ==========================================
+// winnerSeat = null → 留局（莊家留莊）
+// winnerSeat = game.dealer → 莊家胡牌（連莊）
+// winnerSeat = 其他 → 換下一莊
+function handleGameProgression(room, game, winnerSeat) {
+  const ROUND_WINDS = ['dong','nan','xi','bei'];
+  const dealerStays = winnerSeat === null || winnerSeat === game.dealer;
+
+  if (dealerStays) {
+    room.dealerStreak = (room.dealerStreak || 0) + 1;
+    // windOrderUserIds 不變（莊家不換）
+  } else {
+    room.dealerStreak = 0;
+    // 輪莊：把東家移到北家位置（[東,南,西,北] → [南,西,北,東]）
+    if (room.windOrderUserIds.length === 4) {
+      room.windOrderUserIds = [
+        ...room.windOrderUserIds.slice(1),
+        room.windOrderUserIds[0],
+      ];
+    }
+    room.dealerRotations = (room.dealerRotations || 0) + 1;
+    // 每 4 次換莊 = 換圈風
+    if (room.dealerRotations % 4 === 0) {
+      room.roundWindIdx = (room.roundWindIdx || 0) + 1;
+      if (room.roundWindIdx >= 4) {
+        room.gameOver = true; // 四圈打完 = 一將結束
+      }
+    }
+  }
+
+  return {
+    roundWindIdx:    room.roundWindIdx    || 0,
+    roundWind:       ROUND_WINDS[room.roundWindIdx || 0],
+    dealerStreak:    room.dealerStreak    || 0,
+    dealerRotations: room.dealerRotations || 0,
+    gameOver:        room.gameOver        || false,
+  };
 }
 
 // ==========================================
