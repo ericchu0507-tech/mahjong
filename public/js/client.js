@@ -590,7 +590,7 @@ function renderRoomList(rooms) {
     <div class="room-item" onclick="doJoinRoom('${r.id}')">
       <div class="room-item-name">${escHtml(r.name)}</div>
       <div class="room-item-info">
-        <span>$${r.base_bet}/台</span>
+        <span>底台${r.base_tai||3}台</span>
         <span>${r.player_count}/4 人</span>
         <span class="room-host">${escHtml(r.host_name)}</span>
       </div>
@@ -626,11 +626,11 @@ async function loadLeaderboard() {
 function doCreateRoom() {
   if (!socket) return;
   const name      = document.getElementById('room-name').value.trim();
-  const baseBet   = document.getElementById('room-bet').value;
+  const baseTai   = parseInt(document.getElementById('room-base-tai').value) || 3;
   const basePay   = parseInt(document.getElementById('room-base-pay').value) || 100;
   const ruleset   = document.getElementById('room-ruleset').value;
   const allowBots = document.getElementById('room-allow-bots').checked;
-  socket.emit('room:create', { name, baseBet: Number(baseBet), basePay, ruleset, allowBots });
+  socket.emit('room:create', { name, baseTai, basePay, ruleset, allowBots });
 }
 
 // ==========================================
@@ -679,7 +679,7 @@ function doReady() {
 function renderRoomScreen(room) {
   if (!room) return;
   document.getElementById('room-title').textContent = room.name;
-  document.getElementById('room-bet-display').textContent = `底台$${room.base_bet} / 每台$${room.base_pay || 100}`;
+  document.getElementById('room-bet-display').textContent = `底台${room.base_tai||3}台 / 每台$${room.base_pay || 100}`;
 
   const container = document.getElementById('room-players');
   const seats = [0, 1, 2, 3];

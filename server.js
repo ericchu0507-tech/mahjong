@@ -58,7 +58,7 @@ function getLobbyList() {
     .map(r => ({
       id:           r.id,
       name:         r.name,
-      base_bet:     r.baseBet,
+      base_tai:     r.baseTai || 3,
       status:       r.status,
       player_count: r.players.length,
       host_name:    r.players[0]?.username || '?',
@@ -93,20 +93,21 @@ io.on('connection', (socket) => {
   });
 
   // 建立房間
-  socket.on('room:create', ({ name, baseBet, basePay, ruleset, allowBots }) => {
+  socket.on('room:create', ({ name, baseTai, basePay, ruleset, allowBots }) => {
     const db      = getDB();
     const user    = db.queryOne(u => u.id === socket.userId);
     const roomId  = generateRoomId();
-    const bet     = [1, 5, 10].includes(Number(baseBet)) ? Number(baseBet) : 1;
+    const tai     = Math.max(1, Math.min(20, parseInt(baseTai) || 3));
     const pay     = Math.max(1, Math.min(99999, parseInt(basePay) || 100));
     const rules   = ['taiwan','american','hk'].includes(ruleset) ? ruleset : 'taiwan';
 
     const room = {
-      id:         roomId,
-      name:       name || `${socket.username}的房間`,
-      baseBet:    bet,
-      basePay:    pay,
-      ruleset:    rules,
+      id:           roomId,
+      name:         name || `${socket.username}的房間`,
+      baseTai:      tai,
+      basePay:      pay,
+      ruleset:      rules,
+      dealerStreak: 0,
       allowBots:  allowBots !== false,
       status:     'waiting',
       hostId:     socket.userId,
@@ -274,7 +275,7 @@ function roomToClient(room) {
   return {
     id:       room.id,
     name:     room.name,
-    base_bet: room.baseBet,
+    base_tai: room.baseTai || 3,
     base_pay: room.basePay || 100,
     ruleset:  room.ruleset || 'taiwan',
     status:   room.status,
@@ -353,6 +354,8 @@ function scheduleBotClaimIfNeeded(roomId) {
           res.scores.forEach(({ userId: uid, score }) => {
             db.updateUser(uid, { score });
           });
+          if (res.winnerSeat === g.dealer) r.dealerStreak = (r.dealerStreak||0)+1;
+          else r.dealerStreak = 0;
           io.to(roomId).emit('game:hu', { ...res, roomId });
           gameInstances.delete(roomId);
           r.status = 'waiting';
@@ -591,6 +594,13 @@ function handleGameAction(roomId, userId, data) {
     });
     db.queryAll(null).forEach(u => db.updateUser(u.id, { games: (u.games || 0) + 1 }));
 
+    // 連莊追蹤
+    if (result.winnerSeat === game.dealer) {
+      room.dealerStreak = (room.dealerStreak || 0) + 1;
+    } else {
+      room.dealerStreak = 0;
+    }
+
     io.to(roomId).emit('game:hu', { ...result, roomId });
     gameInstances.delete(roomId);
     if (room) room.status = 'waiting';
@@ -626,6 +636,8 @@ function advanceTurn(roomId) {
 
   const result = game.nextTurn();
   if (result.ended) {
+    // 留局視為連莊
+    room.dealerStreak = (room.dealerStreak || 0) + 1;
     io.to(roomId).emit('game:ended', { reason: result.reason });
     gameInstances.delete(roomId);
     if (room) room.status = 'waiting';

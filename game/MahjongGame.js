@@ -160,9 +160,10 @@ function getTenpaiWaiting(hand) {
 // ==========================================
 class MahjongGame {
   constructor(room) {
-    this.roomId  = room.id;
-    this.baseBet = room.baseBet  || 1;
-    this.basePay = room.basePay  || 100; // 每台金額
+    this.roomId       = room.id;
+    this.baseTai      = room.baseTai  || 3;   // 底台數（預設3）
+    this.basePay      = room.basePay  || 100; // 每台金額
+    this.dealerStreak = room.dealerStreak || 0; // 連莊次數
 
     // 四位玩家（依房間順序）
     this.players = room.players.map((p, i) => ({
@@ -212,8 +213,16 @@ class MahjongGame {
       [winds[i], winds[j]] = [winds[j], winds[i]];
     }
     this.players.forEach((p, i) => { p.wind = winds[i]; });
-    this.dealer = this.players.findIndex(p => p.wind === 'dong');
-    this.currentSeat = this.dealer;
+
+    // 依風位排序玩家：東(0)→南(1)→西(2)→北(3)
+    // 這樣 (seat+1)%4 就是下家、棄牌/出牌順序自動正確
+    const WIND_IDX = { dong:0, nan:1, xi:2, bei:3 };
+    this.players.sort((a, b) => WIND_IDX[a.wind] - WIND_IDX[b.wind]);
+    this.players.forEach((p, i) => { p.seat = i; });
+    this.discardPiles = [[], [], [], []]; // 排序後重設
+
+    this.dealer      = 0; // 東風 = seat 0 = 莊家
+    this.currentSeat = 0;
 
     // 骰子（三顆，決定開門）
     this.dice = [
@@ -479,16 +488,25 @@ class MahjongGame {
 
     const loserSeat = isSelfDraw ? null : this.pendingFromSeat;
     const { tai, reasons } = this.calcScore(seat, isSelfDraw, loserSeat);
-    const totalPay = tai * this.basePay;
+    const isWinnerDealer = seat === this.dealer;
 
+    let totalPay = 0;
     if (isSelfDraw) {
+      // 自摸：每人付 tai 台，若贏家非莊家則莊家多付1台
       this.players.forEach((p, i) => {
-        if (i !== seat) { p.score -= totalPay; player.score += totalPay; }
+        if (i === seat) return;
+        const extra  = (!isWinnerDealer && i === this.dealer) ? 1 : 0;
+        const amount = (tai + extra) * this.basePay;
+        p.score    -= amount;
+        player.score += amount;
+        totalPay   += amount;
       });
     } else {
-      const loser = this.players[loserSeat];
-      loser.score  -= totalPay;
-      player.score += totalPay;
+      // 放槍：只有放槍者付（台數已含莊家bonus）
+      const amount = tai * this.basePay;
+      this.players[loserSeat].score -= amount;
+      player.score += amount;
+      totalPay = amount;
     }
 
     this.lastWinnerUserId = userId;
@@ -552,32 +570,85 @@ class MahjongGame {
     return { ok: true, seat: this.currentSeat, drawn: this.drawnTile };
   }
 
-  // ── 計分 ──
+  // ── 計分（台灣麻將規則）──
   calcScore(winnerSeat, isSelfDraw, loserSeat) {
     const winner  = this.players[winnerSeat];
-    const allTiles = [...winner.hand];
-    winner.melds.forEach(m => allTiles.push(...m.tiles));
-    if (this.pendingDiscard) allTiles.push(this.pendingDiscard);
+    const ZI_NAME = { dong:'東', nan:'南', xi:'西', bei:'北', zhong:'中', fa:'發', bai:'白' };
 
-    let tai = 1;
-    const reasons = ['底台 1台'];
+    // 贏家所有牌（手牌含胡的那張 + 面子）
+    const winHand = this.pendingDiscard
+      ? [...winner.hand, this.pendingDiscard]
+      : [...winner.hand];
+    const allTiles = [...winHand, ...winner.melds.flatMap(m => m.tiles)];
 
-    if (winner.melds.length === 0) { tai += 1; reasons.push('門前清 +1台'); }
-    if (isSelfDraw)                 { tai += 1; reasons.push('自摸 +1台'); }
-    if (winner.flowers.length > 0)  { tai += winner.flowers.length; reasons.push(`花牌×${winner.flowers.length} +${winner.flowers.length}台`); }
+    let tai = this.baseTai;
+    const reasons = [`底台 ${this.baseTai}台`];
 
-    const suits = allTiles.filter(t => !t.isFlower).map(t => t.suit);
-    const uniqueSuits = [...new Set(suits)];
-    if (uniqueSuits.length === 1 && uniqueSuits[0] !== 'zi') { tai += 4; reasons.push('清一色 +4台'); }
-    if (uniqueSuits.length === 1 && uniqueSuits[0] === 'zi')  { tai += 4; reasons.push('字一色 +4台'); }
-    if (uniqueSuits.filter(s => s !== 'zi').length === 1 && uniqueSuits.includes('zi')) { tai += 2; reasons.push('混一色 +2台'); }
+    // ── 莊家台 + 拉莊台 ──
+    // 莊家贏 或 莊家放槍 都加
+    const isWinnerDealer = winnerSeat === this.dealer;
+    const isLoserDealer  = loserSeat !== null && loserSeat === this.dealer;
+    if (isWinnerDealer || isLoserDealer) {
+      const N = this.dealerStreak; // 0=首局莊, 1=連一, 2=連二…
+      if (N === 0) {
+        tai += 1; reasons.push('莊家 +1台');
+      } else {
+        tai += N; reasons.push(`莊家 +${N}台`);
+        tai += N; reasons.push(`拉莊 +${N}台`);
+      }
+    }
 
-    ['wan','tiao','tong'].forEach(suit => {
-      const vals = allTiles.filter(t => t.suit === suit).map(t => t.value);
-      if ([1,2,3,4,5,6,7,8,9].every(v => vals.includes(v))) {
-        tai += 3; reasons.push(`一條龍 +3台`);
+    // ── 門清（沒有吃/碰/明槓）──
+    const hasMing = winner.melds.some(m => ['chi','peng','gang','jiagang'].includes(m.type));
+    if (!hasMing) { tai += 1; reasons.push('門清 +1台'); }
+
+    // ── 自摸 ──
+    if (isSelfDraw) { tai += 1; reasons.push('自摸 +1台'); }
+
+    // ── 判斷刻子（碰/槓/手牌暗刻）──
+    const hasKezi = (ziVal) => {
+      if (winner.melds.some(m =>
+        ['peng','gang','jiagang','angang'].includes(m.type) &&
+        m.tiles[0].suit === 'zi' && m.tiles[0].value === ziVal
+      )) return true;
+      return winHand.filter(t => t.suit === 'zi' && t.value === ziVal).length >= 3;
+    };
+
+    // ── 圈風刻子 ──
+    const RW = this.roundWind;
+    if (hasKezi(RW)) { tai += 1; reasons.push(`圈風(${ZI_NAME[RW]}) +1台`); }
+
+    // ── 門風刻子 ──
+    const PW = winner.wind;
+    if (hasKezi(PW)) {
+      tai += 1; reasons.push(`門風(${ZI_NAME[PW]}) +1台`);
+    }
+
+    // ── 三元牌（中/發/白 各刻子 +1台，可疊加）──
+    ['zhong','fa','bai'].forEach(v => {
+      if (hasKezi(v)) { tai += 1; reasons.push(`${ZI_NAME[v]}刻 +1台`); }
+    });
+
+    // ── 花牌台（符合自己方位的花）──
+    const FLOWER_SEAT = {
+      dong: ['chun','mei'], nan: ['xia','lan'],
+      xi:   ['qiu','zhu'],  bei: ['dong2','ju'],
+    };
+    const myFlowers = FLOWER_SEAT[PW] || [];
+    winner.flowers.forEach(f => {
+      if (myFlowers.includes(f.value)) {
+        tai += 1; reasons.push(`花牌(${f.display || f.value}) +1台`);
       }
     });
+
+    // ── 清一色 / 字一色 / 混一色 ──
+    const ntiles = allTiles.filter(t => !t.isFlower);
+    const suits  = [...new Set(ntiles.map(t => t.suit))];
+    const numS   = suits.filter(s => ['wan','tiao','tong'].includes(s));
+    const hasZi  = suits.includes('zi');
+    if (numS.length === 1 && !hasZi)       { tai += 8; reasons.push('清一色 +8台'); }
+    else if (numS.length === 0 && hasZi)   { tai += 8; reasons.push('字一色 +8台'); }
+    else if (numS.length === 1 && hasZi)   { tai += 4; reasons.push('混一色 +4台'); }
 
     return { tai, reasons };
   }
