@@ -191,6 +191,31 @@ io.on('connection', (socket) => {
     handleGameAction(socket.currentRoom, socket.userId, data);
   });
 
+  // 讓人機接手（中途離場）
+  socket.on('game:surrender', () => {
+    const roomId = socket.currentRoom;
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    const game = gameInstances.get(roomId);
+    if (!room || !game) return;
+
+    const rp = room.players.find(p => p.userId === socket.userId);
+    if (!rp) return;
+
+    // 標記為人機，讓 AI 接手
+    rp.isBot = true;
+    rp.socketId = null;
+    socket.leave(roomId);
+    socket.currentRoom = null;
+
+    // 若輪到他出牌或需要決策，觸發人機
+    scheduleBotTurnIfNeeded(roomId);
+    broadcastGameState(room, game);
+
+    socket.emit('game:surrendered');
+    console.log(`[Game] ${rp.username} 讓人機接手`);
+  });
+
   // 斷線
   socket.on('disconnect', () => {
     console.log(`[Socket] ${socket.username} 斷線`);
@@ -262,7 +287,7 @@ function scheduleBotClaimIfNeeded(roomId) {
   const discard     = game.pendingDiscard;
   const fromSeat    = game.pendingFromSeat;
 
-  // 延遲 0.8 秒讓人類玩家先行動，再讓 bot 決策
+  // 延遲 0.2 秒讓廣播先到達，再讓 bot 決策（最短時間）
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
@@ -321,21 +346,30 @@ function scheduleBotClaimIfNeeded(roomId) {
       }
     }
 
-    // 沒有任何 bot 要吃碰：
-    // 只要有任何真人玩家（非出牌者），就繼續等待讓玩家自己決定
-    const hasHumanWaiting = r.players.some(rp => {
-      if (rp.isBot) return false;
+    // 沒有任何 bot 要吃碰：檢查真人玩家是否有任何可行動作
+    let humanCanAct = false;
+    for (const rp of r.players) {
+      if (rp.isBot) continue;
       const seat2 = g.players.findIndex(p => p.userId === rp.userId);
-      return seat2 !== fromSeat;
-    });
+      if (seat2 === fromSeat) continue; // 出牌者不算
+      const hp = g.players[seat2];
+      // 能碰？
+      if (countSame(hp.hand, discard) >= 2) { humanCanAct = true; break; }
+      // 能胡？
+      if (canWin([...hp.hand, discard])) { humanCanAct = true; break; }
+      // 能吃（下家）？
+      if (seat2 === (fromSeat + 1) % 4 && chiCombos(hp.hand, discard).length > 0) {
+        humanCanAct = true; break;
+      }
+    }
 
-    if (!hasHumanWaiting) {
-      // 全部是 bot，直接推進
+    if (!humanCanAct) {
+      // 真人沒有任何可做的動作 → 直接推進
       clearRoomTimer(roomId);
       advanceTurn(roomId);
     }
-    // 有真人玩家 → 繼續等待，玩家自己按過/吃/碰/胡
-  }, 800);
+    // 真人有可行動作 → 等待，玩家自己按過/吃/碰/胡（30 秒後自動超時）
+  }, 200);
 }
 
 function botSmartDiscard(hand) {
@@ -419,7 +453,7 @@ function startGame(roomId) {
     io.to(p.socketId).emit('game:intro', intro);
   });
 
-  // 4 秒後才正式開始（動畫結束）
+  // 7 秒後才正式開始（等抽風＋骰子動畫完成）
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
@@ -529,7 +563,8 @@ function scheduleNextTurn(roomId, discardTile, fromSeat, delay) {
   const timer = setTimeout(() => {
     const game = gameInstances.get(roomId);
     const room = rooms.get(roomId);
-    if (!game || !room || game.phase === 'ended') return;
+    // 只有在等待回應階段才推進（防止 bot 已吃碰後重複觸發）
+    if (!game || !room || game.phase !== 'waiting_response') return;
     advanceTurn(roomId);
   }, delay);
   roomTimers.set(roomId, timer);

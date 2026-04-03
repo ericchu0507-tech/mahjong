@@ -237,6 +237,13 @@ function connectSocket() {
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
+  // 讓人機接手 → 回大廳
+  socket.on('game:surrendered', () => {
+    hideIntroAnimation();
+    showScreen('lobby');
+    socket.emit('lobby:list');
+  });
+
   socket.on('error', ({ message }) => {
     alert('⚠️ ' + message);
   });
@@ -247,6 +254,11 @@ function connectSocket() {
 // ==========================================
 function sendGameAction(type, extra = {}) {
   if (socket) socket.emit('game:action', { type, ...extra });
+}
+
+function onSurrenderGame() {
+  if (!confirm('確定離開遊戲？你的位置將由人機接手繼續遊戲。')) return;
+  if (socket) socket.emit('game:surrender');
 }
 
 // ==========================================
@@ -772,10 +784,23 @@ function showIntroAnimation(intro) {
     card.addEventListener('click', () => {
       if (picked) return;
       picked = true;
-      const pickedWind = allWinds[i]; // 玩家實際點到的那張
-      // 翻開所有牌，點到的那張加金框
+
+      // 被點的那張永遠顯示玩家真實的風（myWind）
+      // 其餘三張隨機分配其他人的風
+      const otherWinds = intro.players.slice(1).map(p => p.wind);
+      for (let j = otherWinds.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [otherWinds[j], otherWinds[k]] = [otherWinds[k], otherWinds[j]];
+      }
+      const displayWinds = [];
+      let oi = 0;
+      for (let ci = 0; ci < 4; ci++) {
+        displayWinds[ci] = (ci === i) ? myWind : otherWinds[oi++];
+      }
+
+      // 翻開所有牌
       cardsEl.querySelectorAll('.intro-wind-card').forEach((c, ci) => {
-        const w = allWinds[ci];
+        const w = displayWinds[ci];
         const isMe = ci === i;
         setTimeout(() => {
           c.classList.add('revealed');
@@ -784,18 +809,19 @@ function showIntroAnimation(intro) {
           c.innerHTML = `<span style="font-size:52px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${windNames[w]}</span>`;
         }, ci * 180);
       });
-      // 顯示玩家實際點到的風
-      const isDealer = pickedWind === 'dong';
+
+      // 結果顯示玩家實際的風（myWind），停留 3 秒後進骰子
+      const isDealer = myWind === 'dong';
       setTimeout(() => {
         resultEl.innerHTML = `
           <div style="text-align:center;font-size:20px;color:#ffcc02;font-weight:bold;">
-            你抽到：<span style="font-size:32px;color:${windColors[pickedWind]};
-              text-shadow:0 0 20px ${windColors[pickedWind]};">${windNames[pickedWind]}</span>
+            你抽到：<span style="font-size:32px;color:${windColors[myWind]};
+              text-shadow:0 0 20px ${windColors[myWind]};">${myWindName}</span>
             ${isDealer ? ' 🎉 你是莊家！' : ''}
           </div>
         `;
-        setTimeout(() => showDicePhase(el, intro, diceFaces, diceSum), 2000);
-      }, allWinds.length * 180 + 400);
+        setTimeout(() => showDicePhase(el, intro, diceFaces, diceSum), 3000);
+      }, 4 * 180 + 400);
     });
     cardsEl.appendChild(card);
   });
@@ -804,14 +830,18 @@ function showIntroAnimation(intro) {
 function showDicePhase(el, intro, diceFaces, diceSum) {
   const windNames = { dong:'東', nan:'南', xi:'西', bei:'北' };
   const windColors= { dong:'#e53935', nan:'#1565c0', xi:'#2e7d32', bei:'#555' };
+  const dealer = intro.players[intro.dealer] || intro.players[0];
 
   el.innerHTML = `
     <div style="font-size:26px;font-weight:900;color:#ffcc02;letter-spacing:3px;">✦ 擲骰開門 ✦</div>
+    <div style="font-size:15px;color:#aaa;margin-bottom:4px;">
+      莊家 <span style="color:${windColors['dong']};font-weight:bold;">${dealer.username}</span> 擲骰
+    </div>
     <div id="dice-row" style="display:flex;gap:20px;">
       ${intro.dice.map(()=>`<span class="intro-dice">${diceFaces[Math.ceil(Math.random()*6)]}</span>`).join('')}
     </div>
     <div id="dice-sum" style="font-size:18px;color:#aaa;min-height:28px;"></div>
-    <div style="font-size:16px;color:#bbb;margin-top:4px;">各家風位</div>
+    <div style="font-size:16px;color:#bbb;margin-top:8px;">各家風位</div>
     <div style="display:flex;gap:16px;">
       ${intro.players.map(p=>`
         <div style="text-align:center;">
@@ -824,10 +854,10 @@ function showDicePhase(el, intro, diceFaces, diceSum) {
           ${p.wind==='dong'?'<div style="font-size:11px;background:#ff6f00;border-radius:6px;padding:1px 6px;margin-top:2px;">莊</div>':''}
         </div>`).join('')}
     </div>
-    <div style="font-size:13px;color:#666;animation:blink 1s infinite;margin-top:8px;">遊戲即將開始...</div>
+    <div id="dice-waiting" style="font-size:13px;color:#666;animation:blink 1s infinite;margin-top:8px;">遊戲即將開始...</div>
   `;
 
-  // 骰子滾動 1.5 秒後停止
+  // 骰子滾動 1.5 秒後停止，結果顯示 3 秒
   const diceEls = el.querySelectorAll('.intro-dice');
   setTimeout(() => {
     diceEls.forEach((d, i) => {
@@ -835,6 +865,8 @@ function showDicePhase(el, intro, diceFaces, diceSum) {
       d.textContent = diceFaces[intro.dice[i]];
     });
     el.querySelector('#dice-sum').textContent = `點數合計：${diceSum}`;
+    const waiting = el.querySelector('#dice-waiting');
+    if (waiting) waiting.textContent = '請記住各家風位，遊戲即將開始...';
   }, 1500);
 }
 
