@@ -636,12 +636,24 @@ function advanceTurn(roomId) {
 
   const result = game.nextTurn();
   if (result.ended) {
-    // 留局視為連莊
     room.dealerStreak = (room.dealerStreak || 0) + 1;
     io.to(roomId).emit('game:ended', { reason: result.reason });
     gameInstances.delete(roomId);
     if (room) room.status = 'waiting';
     return;
+  }
+  if (result.error) {
+    // 手牌異常（防相公），記錄後再試一次推進
+    console.error(`[advanceTurn] ${result.error}`);
+    broadcastGameState(room, game);
+    // 再推進一格，跳過異常玩家
+    const r2 = game.nextTurn();
+    if (r2.ended || r2.error) {
+      io.to(roomId).emit('game:ended', { reason: '手牌異常，流局' });
+      gameInstances.delete(roomId);
+      if (room) room.status = 'waiting';
+      return;
+    }
   }
   broadcastGameState(room, game);
   scheduleBotTurnIfNeeded(roomId);

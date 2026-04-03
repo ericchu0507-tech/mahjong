@@ -312,6 +312,19 @@ class MahjongGame {
     if (seat !== this.currentSeat) return { error: '還沒輪到你' };
     if (this.phase !== 'playing')  return { error: '目前不能出牌' };
 
+    // 防相公：出牌前手牌必須是 3n+2（可以出牌的合法張數）
+    const meldCount = player.melds.reduce((n, m) =>
+      n + (['gang','jiagang','angang'].includes(m.type) ? 4 : 3), 0);
+    const total = player.hand.length + meldCount;
+    // 合法狀態：手牌+面子 = 16 或 13 (吃/碰後)，出牌後變 15 或 12
+    // 簡化：手牌必須是 (16 - meldCount*3 + 槓數) 的合法值
+    // 實際規則：手牌 % 3 === 1 （持有時）或 2（可出牌時）
+    // 出牌前手牌張數 % 3 應等於 2（含摸進的牌）
+    if (player.hand.length % 3 !== 2) {
+      console.warn(`[防相公] ${player.username} 出牌時手牌${player.hand.length}張，不合法`);
+      return { error: `手牌張數異常（${player.hand.length}張），無法出牌` };
+    }
+
     const tileIdx = player.hand.findIndex(t => t.id === tileId);
     if (tileIdx === -1) return { error: '找不到這張牌' };
 
@@ -329,6 +342,8 @@ class MahjongGame {
   pass(userId) {
     if (this.waitingFor && this.waitingFor !== userId) return { error: '不是你的回合' };
     this.waitingFor = null;
+    // currentSeat 維持在出牌者，nextTurn 才會正確 +1 到下家摸牌
+    this.currentSeat = this.pendingFromSeat ?? this.currentSeat;
     this.phase = 'playing';
     return { ok: true };
   }
@@ -548,6 +563,14 @@ class MahjongGame {
 
     this.currentSeat = (this.currentSeat + 1) % 4;
     const player = this.players[this.currentSeat];
+
+    // 防相公：摸牌前手牌必須是 3n+1（摸進後變 3n+2 可出牌）
+    if (player.hand.length % 3 !== 1) {
+      console.warn(`[防相公] ${player.username} 摸牌前手牌${player.hand.length}張，不合法，強制修正`);
+      // 這不應發生，但若發生則跳過此人繼續下一家以免卡死
+      return { error: `${player.username} 手牌異常，跳過回合` };
+    }
+
     const tile   = this._drawTile(this.currentSeat);
 
     if (!tile) {

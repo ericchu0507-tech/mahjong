@@ -1,107 +1,92 @@
 # 台灣麻將 — 專案記憶檔
 
 ## 專案簡介
-純 HTML/CSS/JS 實作的台灣麻將遊戲（無框架），目標為四人連線麻將。
+Node.js + Express + Socket.io 多人連線台灣麻將，部署於 Render.com，GitHub 自動部署。
 
 ## 檔案結構
 ```
 mahjong/
-├── index.html       ← 主頁面（HTML 結構）
-├── css/style.css    ← 所有樣式
-├── js/tiles.js      ← 牌組定義、牌面渲染、洗牌、擲骰子
-└── js/game.js       ← 遊戲狀態、發牌、出牌、輪流邏輯
+├── server.js              ← Express + Socket.io 主伺服器
+├── game/MahjongGame.js    ← 遊戲引擎（計分/出牌/吃碰槓胡）
+├── db/database.js         ← JSON 檔案資料庫（使用者帳號）
+├── routes/auth.js         ← JWT 登入/註冊 API
+├── public/
+│   ├── index.html         ← 單頁應用主頁面
+│   ├── css/style.css      ← 所有樣式（2600px 固定寬度 + CSS scale）
+│   └── js/
+│       ├── client.js      ← Socket.io 客戶端 + 渲染邏輯
+│       └── tiles.js       ← 牌組定義 + 牌面 SVG/HTML 渲染
 ```
 
 ## 核心架構
 
-### 資料層（tiles.js）
-- `createDeck()` — 建立 144 張牌組（萬/條/筒/字/花）
-- `shuffleDeck()` — 洗牌
-- `createTileElement(tile, faceDown, small)` — 建立牌的 DOM 元素
-- `makeTongGraphic(value, small)` — 筒子同心圓圖案（3層：外環/中環/內點）
-- `makeTiaoGraphic(value, small)` — 條子竹節圖案（一條=鸚鵡）
-- `rollDice(count)` — 擲骰子
-- `drawWinds()` / `findDealer(winds)` — 抽風決定莊家
-
-### 狀態層（game.js）
-- `gameState` 物件：
-  - `players[4]` — 四位玩家（手牌、風位、籌碼、花牌、面子）
-  - `deck[]` — 牌牆剩餘牌
-  - `discardPiles[4]` — 各玩家棄牌
-  - `currentPlayer` — 目前輪到誰（playerIndex）
-  - `dealer` — 莊家 playerIndex（抽到東風的人）
-  - `roundWind` — 圈風
-  - `phase` — 遊戲階段（setup/dealing/playing/ended）
-  - `seatMap` — visual位置→playerIndex（bottom/right/top/left）
-  - `playOrder` — 出牌順序陣列（東→南→西→北的 playerIndex）
-
-### 台灣麻將特有規則
-- 每人起手 **16 張**（莊家先多摸1張開門）
-- 胡牌 = **5面子 + 1對** = 17 張（含手上牌 + 摸/碰的那張）
-- **吃**：只能吃上家棄牌（順子）
-- **碰**：任何人棄牌皆可碰
-- **明槓**：只能槓非上家的棄牌（上家棄牌只能吃/碰）
-- **明槓後補牌不能自摸胡**
-- **暗槓**：自己摸牌時手上已有4張，可暗槓，暗槓後可自摸胡
+### 座位與出牌順序
+- 玩家依風位排序：**東(0)→南(1)→西(2)→北(3)**
+- `start()` 發完風位後立即重新排序玩家陣列，確保 `(seat+1)%4` = 下家
+- 玩家自己**永遠在畫面最下方**（bottom），下家右、對家上、上家左
+- `seatToVisual(seat)` = diff → ['bottom','right','top','left']
 
 ### 遊戲流程
-1. 開始畫面 → 2. 抽風（決定東南西北）→ 3. 擲骰子（決定開門）→ 4. 發牌 → 5. 輪流出牌
+1. 建房（設底台、每台金額）→ 等人/補人機
+2. 發 `game:intro`（抽風動畫）→ 玩家點牌抽風
+3. 骰子動畫停 3 秒 → client 送 `game:ready` → server 送 `game:start`
+4. 輪流出牌（真人 15 秒自動出牌；bot 0.8 秒）
+5. 胡牌/留局 → 結算 → 連莊追蹤
 
-### 風位與座位規則
-- 抽到**東**的玩家 = 莊家，先出牌
-- 座位（反時針）：東=底部 → 南=右 → 西=上 → 北=左
-- `buildSeatMap()` 在抽風完成後呼叫，player0 永遠在底部
-- `visualPosOf(playerIndex)` → 'bottom'|'right'|'top'|'left'
-- `VISUAL_DISCARD_ID` = { bottom:0, top:1, right:2, left:3 }
+### 關鍵 Socket 事件
+| 事件 | 方向 | 說明 |
+|------|------|------|
+| `game:intro` | S→C | 抽風/骰子資訊 |
+| `game:ready` | C→S | 動畫播完，開始遊戲 |
+| `game:start` | S→C | 初始牌況 |
+| `game:state` | S→C | 每次狀態更新 |
+| `game:action` | C→S | 出牌/吃/碰/槓/胡/過 |
+| `game:hu` | S→C | 胡牌結算（含所有人手牌） |
+| `game:ended` | S→C | 留局/流局 |
+| `game:temp_surrender` | C→S | 暫時休息（人機代打） |
+| `game:surrender` | C→S | 永久離場 |
+| `game:resume` | C→S | 回來繼續 |
 
-### 抽風 UI
-- 4張牌全部可點，玩家（player0）先選，AI 依序自動抽剩餘3張
-- `finishWindDraw()` 完成後呼叫 `buildSeatMap()`
+### 防相公機制
+- `discard()` 前：手牌必須 `% 3 === 2`
+- `nextTurn()` 前：手牌必須 `% 3 === 1`
+- `pass()` 後：`currentSeat` 維持在**出牌者**，`nextTurn` 才 +1 到正確下家
 
-### 出牌順序
-- 東→南→西→北（`gameState.playOrder`）
-- `nextTurn()` 依 playOrder 輪轉
+### 計分規則（台灣麻將）
+- **底台**：房主設定（預設 3 台）
+- **莊家台**：N=0（首局）+1；連莊N次 = +N（莊家）+N（拉莊）
+- **圈風刻子** +1、**門風刻子** +1（可疊加）
+- **花牌**：只有符合自己座位方位的花才算（東↔春/梅、南↔夏/蘭、西↔秋/竹、北↔冬/菊）
+- **三元牌**：中/發/白 各刻子 +1，可疊加
+- **門清** +1、**自摸** +1
+- **混一色** +4、**清一色** +8、**字一色** +8
+- **非莊家自摸**：莊家多付 1 台
+- **放槍**：只有放槍者付款
 
-### 棄牌顯示
-- `addDiscardToCenter()` 用 `visualPosOf()` 換算正確 DOM id
-- DOM: discard-tiles-0=底部, 1=上方, 2=右方, 3=左方
+### 吃碰優先級
+- 碰/胡 優先於 吃
+- bot 決策：先找能碰的 → 確認無人能碰才讓 bot 吃
+- 真人按吃後延遲 1.5 秒執行，讓其他人有機會搶碰
 
-### 莊家顯示
-- `updatePlayerInfo()` 在莊家的 wind-badge 顯示「東 莊」
-- `.wind-badge.dealer` CSS class（橘色）
-
-### 牌牆
-- 每面 18 堆，每堆 2 張疊放（下層 + 上層），共 4 面 72 堆 = 144 張
-- 順時針從底部開始：bottom → right → top → left
-- `renderWall()` 在發牌完成及每次摸牌後呼叫
-
-### 棄牌區
-- 每位玩家棄牌以 grid 6欄排列，由左至右、由上至下
-- tile-small 尺寸 40×54px
+### 牌面圖案（tiles.js）
+- **七筒**：上方3顆左高右低斜排（藍藍紅）+ 下方2+2（紅）
+- **六條**：3+3（兩排各3根）
+- **七條**：1+3+3（頂1紅 + 兩排各3綠）
+- **八條**：4+4（兩排各4根）
+- **一條**：鸚鵡圖案
 
 ## 牌的尺寸
-- 手牌：66×90px
-- 棄牌小牌：40×54px
-
-## 牌的 CSS class 命名
-- `.tile` — 所有牌的基底
-- `.tile-small` — 棄牌區縮小版
-- `.tile-back` — 牌背
-- `.wan` / `.tiao` / `.tong` / `.zi` / `.flower` — 各花色
-- `.drawn` — 剛摸進來的牌（橘色發光）
-- `.selected` — 被選中的牌（上移）
+- 手牌：66×90px（CSS transform scale 到視窗）
+- 棄牌小牌：tile-small（58×78px）
 
 ## 用戶偏好
-- 純 HTML/CSS/JS，不用框架
-- 筒/條不需要顯示數字（玩家自己數圖案）
-- 牌要夠大但不超出視窗寬度
-- 改動前先說明計畫，確認再動手
+- 純 HTML/CSS/JS + Node.js，不用前端框架
+- 更動前說明計畫確認再動手
 - 用繁體中文溝通
+- **不要亂改沒說要改的地方**（寬度、字體等）
+- 更新完自動 git push
 
-## 已知待修 Bug
-- **7筒**：排列錯誤（正確：頂部1顆紅 + 下方3排各2顆 = 1+2+2+2）
-- **5條**：排列錯誤（正確：2+1+2，中間那根位置不對）
-- **7條**：排列錯誤（正確：H形 = 兩側各3根 + 中排中間補1根）
-
-## 待確認問題
-- **「排強」** — 用戶說過但未解釋意思（排序按鈕？排行榜？）
+## 部署
+- Render.com 免費方案（手動 Deploy 觸發）
+- GitHub repo: ericchu0507-tech/mahjong
+- 冷啟動約 50 秒
