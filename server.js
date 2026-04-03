@@ -374,19 +374,26 @@ function scheduleBotClaimIfNeeded(roomId) {
     }
 
     // 再找能吃的 bot（只有下家）
-    const nextSeat = (fromSeat + 1) % 4;
-    const nextP = g.players[nextSeat];
-    const nextRp = r.players.find(x => x.userId === nextP?.userId);
-    if (nextRp?.isBot && g.phase === 'waiting_response') {
-      const combos = chiCombos(nextP.hand, discard);
-      if (combos.length > 0) {
-        const tileIds = combos[0].map(t => t.id);
-        const res = g.chi(nextP.userId, tileIds);
-        if (!res.error) {
-          clearRoomTimer(roomId);
-          broadcastGameState(r, g);
-          scheduleBotTurnIfNeeded(roomId);
-          return;
+    // 但必須先確認沒有任何人（真人或 bot）能碰——碰永遠優先於吃
+    const anyoneCanPeng = g.players.some((p, seat) => {
+      if (seat === fromSeat) return false;
+      return countSame(p.hand, discard) >= 2;
+    });
+    if (!anyoneCanPeng) {
+      const nextSeat = (fromSeat + 1) % 4;
+      const nextP = g.players[nextSeat];
+      const nextRp = r.players.find(x => x.userId === nextP?.userId);
+      if ((nextRp?.isBot || nextRp?.tempBot) && g.phase === 'waiting_response') {
+        const combos = chiCombos(nextP.hand, discard);
+        if (combos.length > 0) {
+          const tileIds = combos[0].map(t => t.id);
+          const res = g.chi(nextP.userId, tileIds);
+          if (!res.error) {
+            clearRoomTimer(roomId);
+            broadcastGameState(r, g);
+            scheduleBotTurnIfNeeded(roomId);
+            return;
+          }
         }
       }
     }

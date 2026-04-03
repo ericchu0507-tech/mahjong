@@ -511,6 +511,13 @@ class MahjongGame {
       winningTile:   this.pendingDiscard || this.drawnTile,
       playerNames:   this.players.map(p => p.username),
       scores: this.players.map(p => ({ userId: p.userId, score: p.score })),
+      // 所有玩家的牌型（結算時展示）
+      allPlayers: this.players.map((p, s) => ({
+        seat: s, username: p.username,
+        hand:    s === seat ? winnerHand : [...p.hand],
+        melds:   p.melds,
+        flowers: p.flowers,
+      })),
     };
   }
 

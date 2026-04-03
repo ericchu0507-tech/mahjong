@@ -230,6 +230,9 @@ function connectSocket() {
       ? (result.isSelfDraw ? '自摸！' : '胡牌！')
       : `${winnerName} 胡牌了！`;
 
+    // 翻開桌上其他玩家的手牌
+    revealAllHands(result);
+
     // 台數與放槍資訊
     let payLine = `${result.reasons?.join('、') || '底台'}，共 ${result.tai} 台 × $${result.totalPay / result.tai} = $${result.totalPay}`;
     if (result.isSelfDraw) {
@@ -248,33 +251,54 @@ function connectSocket() {
       return `<span>${badge}${name}：$${s.score}（${sign}）</span>`;
     }).join('&nbsp;&nbsp;');
 
-    // 贏家牌型
-    let tilesHtml = '';
-    if (result.winnerMelds?.length || result.winnerHand?.length) {
-      tilesHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin:10px 0;align-items:flex-end;">';
-      (result.winnerMelds || []).forEach(meld => {
-        tilesHtml += '<div style="display:flex;gap:2px;background:rgba(255,255,255,0.1);border-radius:4px;padding:2px;">';
-        meld.tiles.forEach((tile, ti) => {
-          const faceDown = (meld.type === 'angang') && (ti === 0 || ti === 3);
-          tilesHtml += createTileElement(tile, faceDown, true).outerHTML;
-        });
-        tilesHtml += '</div>';
+    // 建立牌型顯示（面子 + 排序後手牌）
+    function buildTilesHtml(hand, melds, winningTile) {
+      const SUIT_ORDER = { wan:0, tiao:1, tong:2, zi:3, flower:4 };
+      const sorted = [...(hand || [])].sort((a, b) => {
+        const sd = (SUIT_ORDER[a.suit]||0) - (SUIT_ORDER[b.suit]||0);
+        if (sd) return sd;
+        return (typeof a.value==='number' ? a.value : 99) - (typeof b.value==='number' ? b.value : 99);
       });
-      tilesHtml += '<div style="display:flex;gap:2px;">';
-      (result.winnerHand || []).forEach(tile => {
+      let html = '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:flex-end;">';
+      (melds || []).forEach(meld => {
+        html += '<div style="display:flex;gap:1px;background:rgba(255,255,255,0.1);border-radius:4px;padding:2px;">';
+        meld.tiles.forEach((tile, ti) => {
+          const fd = (meld.type === 'angang') && (ti === 0 || ti === 3);
+          html += createTileElement(tile, fd, true).outerHTML;
+        });
+        html += '</div>';
+      });
+      html += '<div style="display:flex;gap:1px;">';
+      sorted.forEach(tile => {
         const el = createTileElement(tile, false, true);
-        if (result.winningTile && tile.id === result.winningTile.id) {
+        if (winningTile && tile.id === winningTile.id) {
           el.style.outline = '2px solid #ffcc02';
           el.style.outlineOffset = '2px';
         }
-        tilesHtml += el.outerHTML;
+        html += el.outerHTML;
       });
-      tilesHtml += '</div></div>';
+      return html + '</div></div>';
     }
+
+    // 所有玩家的牌型（贏家＋其他三家）
+    let allHandsHtml = '';
+    (result.allPlayers || []).forEach(pd => {
+      const isWinner = pd.seat === result.winnerSeat;
+      const isLoser  = pd.seat === result.loserSeat;
+      const badge    = isWinner ? '🏆 ' : isLoser ? '🎯 ' : '';
+      const color    = isWinner ? '#ffcc02' : isLoser ? '#ff6b6b' : '#ccc';
+      allHandsHtml += `<div style="margin:6px 0;text-align:center;">
+        <div style="font-size:13px;color:${color};font-weight:bold;margin-bottom:2px;">${badge}${pd.username}</div>
+        ${buildTilesHtml(pd.hand, pd.melds, isWinner ? result.winningTile : null)}
+      </div>`;
+    });
 
     document.getElementById('win-title').textContent = title;
     document.getElementById('win-detail').innerHTML  =
-      payLine + tilesHtml + '<div style="margin-top:8px;font-size:13px;">' + scoreHtml + '</div>';
+      payLine +
+      '<div style="margin:10px 0;border-top:1px solid rgba(255,255,255,0.15);padding-top:8px;">' +
+      allHandsHtml + '</div>' +
+      '<div style="margin-top:8px;font-size:13px;">' + scoreHtml + '</div>';
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
@@ -940,6 +964,35 @@ function showDicePhase(el, intro, diceFaces, diceSum) {
       if (socket) socket.emit('game:ready');
     }, 3000);
   }, 1500);
+}
+
+// 翻開桌上所有玩家手牌（胡牌結算用）
+function revealAllHands(result) {
+  const state = window._lastGameState;
+  if (!state || !result.allPlayers) return;
+  const mySeat = state.mySeat;
+  const seatToVisual = (seat) => {
+    const diff = (seat - mySeat + 4) % 4;
+    return ['bottom', 'right', 'top', 'left'][diff];
+  };
+  const VISUAL_HAND = { bottom: 'my-hand', top: 'hand-top', right: 'hand-right', left: 'hand-left' };
+  const SUIT_ORDER  = { wan:0, tiao:1, tong:2, zi:3, flower:4 };
+
+  result.allPlayers.forEach(pd => {
+    if (pd.seat === mySeat) return; // 自己的牌已正常顯示
+    const vpos  = seatToVisual(pd.seat);
+    const handEl = document.getElementById(VISUAL_HAND[vpos]);
+    if (!handEl) return;
+    handEl.innerHTML = '';
+    const sorted = [...(pd.hand || [])].sort((a, b) => {
+      const sd = (SUIT_ORDER[a.suit]||0) - (SUIT_ORDER[b.suit]||0);
+      if (sd) return sd;
+      return (typeof a.value==='number' ? a.value : 99) - (typeof b.value==='number' ? b.value : 99);
+    });
+    sorted.forEach(tile => {
+      handEl.appendChild(createTileElement(tile, false, true));
+    });
+  });
 }
 
 function hideIntroAnimation() {
