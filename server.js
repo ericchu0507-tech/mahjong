@@ -247,7 +247,8 @@ function scheduleBotTurnIfNeeded(roomId) {
     if (result.error) return;
 
     broadcastGameState(r, g);
-    scheduleNextTurnWithBotCheck(roomId, 1500);
+    // 人機出牌後同樣給真人 30 秒吃碰視窗
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 30000);
   }, 400);
 }
 
@@ -321,47 +322,20 @@ function scheduleBotClaimIfNeeded(roomId) {
     }
 
     // 沒有任何 bot 要吃碰：
-    // - 若下一家是真人，繼續等待（玩家可手動過）
-    // - 若下一家是 bot，直接推進
-    const nextRpCheck = r.players.find(x => x.userId === g.players[nextSeat]?.userId);
-    const humanCanChi = !nextRpCheck?.isBot;
-
-    // 檢查是否有任何真人可以碰/胡（任意座位）
-    const humanCanClaim = r.players.some(rp => {
+    // 只要有任何真人玩家（非出牌者），就繼續等待讓玩家自己決定
+    const hasHumanWaiting = r.players.some(rp => {
       if (rp.isBot) return false;
       const seat2 = g.players.findIndex(p => p.userId === rp.userId);
-      if (seat2 === fromSeat) return false;
-      const p2 = g.players[seat2];
-      return canWin([...p2.hand, discard]) || countSame(p2.hand, discard) >= 2;
+      return seat2 !== fromSeat;
     });
 
-    if (!humanCanChi && !humanCanClaim) {
-      // 全部都是 bot 或真人沒機會，直接推進
+    if (!hasHumanWaiting) {
+      // 全部是 bot，直接推進
       clearRoomTimer(roomId);
       advanceTurn(roomId);
     }
-    // 否則繼續等玩家手動決定（過/吃/碰/胡）
+    // 有真人玩家 → 繼續等待，玩家自己按過/吃/碰/胡
   }, 800);
-}
-
-function scheduleNextTurnWithBotCheck(roomId, delay) {
-  clearRoomTimer(roomId);
-  const timer = setTimeout(() => {
-    const game = gameInstances.get(roomId);
-    const room = rooms.get(roomId);
-    if (!game || !room || game.phase === 'ended') return;
-    const result = game.nextTurn();
-    if (result.ended) {
-      io.to(roomId).emit('game:ended', { reason: result.reason });
-      gameInstances.delete(roomId);
-      if (room) room.status = 'waiting';
-      return;
-    }
-    broadcastGameState(room, game);
-    scheduleBotTurnIfNeeded(roomId);
-    scheduleAutoDiscard(roomId);
-  }, delay);
-  roomTimers.set(roomId, timer);
 }
 
 function botSmartDiscard(hand) {
@@ -475,8 +449,8 @@ function handleGameAction(roomId, userId, data) {
     // 廣播出牌
     broadcastGameState(room, game);
 
-    // 等待玩家吃碰槓胡（無時限，玩家按「過」才繼續）
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 86400000);
+    // 等待玩家吃碰槓胡（30 秒後自動推進）
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 30000);
 
   } else if (type === 'pass') {
     clearRoomTimer(roomId);
@@ -493,6 +467,7 @@ function handleGameAction(roomId, userId, data) {
     result = game.peng(userId);
     if (result.error) return sendError(userId, room, result.error);
     broadcastGameState(room, game);
+    scheduleAutoDiscard(roomId);
 
   } else if (type === 'chi') {
     clearRoomTimer(roomId);
@@ -509,6 +484,7 @@ function handleGameAction(roomId, userId, data) {
       const res = g.chi(req.userId, req.tileIds);
       if (res.error) return sendError(req.userId, r, res.error);
       broadcastGameState(r, g);
+      scheduleAutoDiscard(roomId);
     }, 1500);
     roomTimers.set(roomId + '_chi', chiTimer);
     return;
@@ -605,7 +581,7 @@ function scheduleAutoDiscard(roomId) {
     const result = g.discard(player.userId, toDiscard.id);
     if (result.error) return;
     broadcastGameState(r, g);
-    scheduleNextTurn(roomId, result.tile, result.fromSeat, 15000);
+    scheduleNextTurn(roomId, result.tile, result.fromSeat, 30000);
   }, 15000);
   autoDiscardTimers.set(roomId, timer);
 }
