@@ -230,7 +230,7 @@ function scheduleBotTurnIfNeeded(roomId) {
   const roomPlayer = room.players.find(p => p.userId === currentPlayer.userId);
   if (!roomPlayer?.isBot) return;
 
-  // 人機延遲 0.8 秒出牌
+  // 人機延遲 0.3 秒出牌
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);

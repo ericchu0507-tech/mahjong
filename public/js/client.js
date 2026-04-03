@@ -771,12 +771,12 @@ function showIntroAnimation(intro) {
     card.innerHTML = `<span style="font-size:32px;opacity:0.3;">?</span>`;
     card.addEventListener('click', () => {
       if (picked) return;
-      // 只有點到我自己的風才算（但這裡讓玩家自由點，翻開點到的牌）
       picked = true;
-      // 翻開所有牌
+      const pickedWind = allWinds[i]; // 玩家實際點到的那張
+      // 翻開所有牌，點到的那張加金框
       cardsEl.querySelectorAll('.intro-wind-card').forEach((c, ci) => {
         const w = allWinds[ci];
-        const isMe = w === myWind && ci === i;
+        const isMe = ci === i;
         setTimeout(() => {
           c.classList.add('revealed');
           c.style.background = `linear-gradient(145deg,${windColors[w]},${windColors[w]}aa)`;
@@ -784,17 +784,16 @@ function showIntroAnimation(intro) {
           c.innerHTML = `<span style="font-size:52px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">${windNames[w]}</span>`;
         }, ci * 180);
       });
-      // 顯示結果，然後進入骰子階段
-      const isDealer = myWind === 'dong';
+      // 顯示玩家實際點到的風
+      const isDealer = pickedWind === 'dong';
       setTimeout(() => {
         resultEl.innerHTML = `
           <div style="text-align:center;font-size:20px;color:#ffcc02;font-weight:bold;">
-            你抽到：<span style="font-size:32px;color:${windColors[myWind]};
-              text-shadow:0 0 20px ${windColors[myWind]};">${myWindName}</span>
+            你抽到：<span style="font-size:32px;color:${windColors[pickedWind]};
+              text-shadow:0 0 20px ${windColors[pickedWind]};">${windNames[pickedWind]}</span>
             ${isDealer ? ' 🎉 你是莊家！' : ''}
           </div>
         `;
-        // 2 秒後進入骰子動畫
         setTimeout(() => showDicePhase(el, intro, diceFaces, diceSum), 2000);
       }, allWinds.length * 180 + 400);
     });
