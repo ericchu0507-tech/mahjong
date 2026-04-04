@@ -24,15 +24,30 @@ body {
    ========================================== */
 #game-container {
   width: 2600px;
+  height: 900px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: 1fr;
-  background: #1b5e20; /* 深綠桌布 */
+  background: #1b5e20;
   background-image:
-    radial-gradient(ellipse at center, #2e7d32 0%, #1b5e20 70%);
+    radial-gradient(ellipse at 50% 40%, #2e7d32 0%, #1b5e20 55%, #14491a 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px,
+      transparent 1px, transparent 60px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px,
+      transparent 1px, transparent 60px
+    );
   position: fixed;
   border-radius: 16px;
-  box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  box-shadow:
+    0 0 80px rgba(0,0,0,0.9),
+    inset 0 0 80px rgba(0,0,0,0.2);
+  border: 6px solid #5d4037;
+  outline: 3px solid #3e2723;
   transform-origin: top left;
 }
 
@@ -117,13 +132,22 @@ body {
 
 /* 摸進來的牌（最後一張） */
 .tile.drawn {
-  margin-left: 12px;
-  border-color: #f5a623;
-  background: linear-gradient(160deg, #fffef0 0%, #fff8d6 50%, #fef0a0 100%);
+  margin-left: 14px;
+  border-color: #ffcc02;
+  background: linear-gradient(160deg, #fffff0 0%, #fff9cc 50%, #ffed80 100%);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.9),
     3px 4px 0px #8a7a50,
-    0 0 12px rgba(245,166,35,0.7);
+    0 0 18px rgba(255,204,2,1),
+    0 0 36px rgba(255,170,0,0.7),
+    0 0 54px rgba(255,140,0,0.4);
+  animation: drawnPulse 1s ease-in-out infinite;
+}
+@keyframes drawnPulse {
+  0%,100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 3px 4px 0px #8a7a50,
+    0 0 18px rgba(255,204,2,1), 0 0 36px rgba(255,170,0,0.7); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 3px 4px 0px #8a7a50,
+    0 0 28px rgba(255,220,2,1), 0 0 56px rgba(255,200,0,0.9), 0 0 80px rgba(255,160,0,0.5); }
 }
 
 /* 滑鼠懸停 */
@@ -696,36 +720,43 @@ body {
 }
 
 .btn {
-  padding: 6px 16px;
+  padding: 12px 28px;
   border: none;
-  border-radius: 20px;
-  font-size: 15px;
+  border-radius: 24px;
+  font-size: 22px;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.15s;
   font-family: inherit;
+  letter-spacing: 2px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+  border-bottom: 4px solid rgba(0,0,0,0.25);
 }
 
 .btn:disabled {
-  opacity: 0.3;
+  opacity: 0.28;
   cursor: not-allowed;
   transform: none !important;
+  filter: grayscale(40%);
 }
 
 .btn:not(:disabled):hover {
-  transform: scale(1.08);
+  transform: scale(1.1) translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5);
 }
 
 .btn:not(:disabled):active {
-  transform: scale(0.95);
+  transform: scale(0.95) translateY(2px);
+  border-bottom-width: 1px;
 }
 
-.btn-chi  { background: #43a047; color: #fff; }
-.btn-peng { background: #1e88e5; color: #fff; }
-.btn-gang { background: #8e24aa; color: #fff; }
-.btn-hu   { background: #e53935; color: #fff; box-shadow: 0 0 10px rgba(229,57,53,0.5); }
-.btn-pass { background: #546e7a; color: #fff; }
-.btn-ting { background: linear-gradient(135deg,#f57f17,#ff6f00); color: #fff; }
+.btn-chi  { background: linear-gradient(135deg,#4caf50,#2e7d32); color: #fff; }
+.btn-peng { background: linear-gradient(135deg,#42a5f5,#1565c0); color: #fff; }
+.btn-gang { background: linear-gradient(135deg,#ab47bc,#6a1b9a); color: #fff; }
+.btn-hu   { background: linear-gradient(135deg,#ef5350,#b71c1c); color: #fff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4), 0 0 16px rgba(229,57,53,0.6); }
+.btn-pass { background: linear-gradient(135deg,#78909c,#37474f); color: #fff; }
+.btn-ting { background: linear-gradient(135deg,#ffa726,#e65100); color: #fff; }
 
 /* 聽牌中狀態 */
 .btn-ting.ting-active {
@@ -752,12 +783,12 @@ body {
 
 /* 按鈕啟用時的發光效果 */
 .btn-hu:not(:disabled) {
-  animation: pulse 1s infinite;
+  animation: pulseHu 0.9s infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(229,57,53,0.5); }
-  50%       { box-shadow: 0 0 20px rgba(229,57,53,0.9); }
+@keyframes pulseHu {
+  0%, 100% { box-shadow: 0 4px 8px rgba(0,0,0,0.4), 0 0 14px rgba(229,57,53,0.6); transform: scale(1); }
+  50%       { box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 32px rgba(229,57,53,1), 0 0 50px rgba(229,57,53,0.5); transform: scale(1.06); }
 }
 
 /* ==========================================
@@ -1418,3 +1449,154 @@ body {
   cursor: pointer;
 }
 .checkbox-label input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+
+/* ==========================================
+   出牌放大動畫
+   ========================================== */
+@keyframes discardPop {
+  0%   { transform: scale(0.3); opacity: 0; }
+  20%  { transform: scale(2.8); opacity: 1; }
+  60%  { transform: scale(2.5); opacity: 1; }
+  85%  { transform: scale(2.5); opacity: 1; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+.discard-center-anim {
+  animation: discardPop 1s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ==========================================
+   角色頭像（玩家名字旁的動畫）
+   ========================================== */
+.avatar {
+  font-size: 32px;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.3);
+  border: 2px solid rgba(255,255,255,0.15);
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+/* 輪到這個玩家時 */
+.avatar.active {
+  animation: avatarBounce 0.6s ease-in-out infinite alternate;
+  border-color: #ffcc02;
+  box-shadow: 0 0 16px rgba(255,204,2,0.8);
+  background: rgba(255,204,2,0.15);
+}
+@keyframes avatarBounce {
+  0%   { transform: scale(1)    translateY(0); }
+  100% { transform: scale(1.15) translateY(-5px); }
+}
+
+/* 輪到我 — 底部玩家發光 */
+.player-bottom .player-info.my-turn {
+  box-shadow: 0 0 24px rgba(255,204,2,0.6);
+  background: rgba(255,204,2,0.12);
+  border: 1px solid rgba(255,204,2,0.4);
+}
+
+/* 其他玩家當前回合 — 名字旁閃爍指示 */
+.player-info.active-turn::after {
+  content: ' ▶';
+  color: #ffcc02;
+  animation: blinkArrow 0.7s infinite;
+}
+@keyframes blinkArrow {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* 玩家資訊面板精美化 */
+.player-info {
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.1);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* action-hint 精美化 */
+.action-hint {
+  background: linear-gradient(135deg,rgba(0,0,0,0.65),rgba(20,20,40,0.65));
+  border: 1px solid rgba(255,204,2,0.3);
+  border-radius: 20px;
+  padding: 6px 18px;
+  font-size: 15px;
+  color: #ffcc02;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+/* game-toast 淡出過渡 */
+#game-toast {
+  transition: opacity 0.3s ease;
+}
+
+/* 出牌中心 overlay */
+#discard-center-overlay {
+  display: none;
+}
+#discard-center-overlay.show {
+  display: flex;
+}
+
+/* wind-disc 精美化 */
+.wind-disc {
+  background: radial-gradient(circle, #5d4037 0%, #3e2723 70%);
+  border: 3px solid #8d6e63;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.wind-center {
+  font-size: 24px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+/* game-round-info 精美化 */
+#game-round-info {
+  font-size: 12px;
+  color: #ffcc02;
+  background: rgba(0,0,0,0.4);
+  border-radius: 8px;
+  padding: 3px 10px;
+  border: 1px solid rgba(255,204,2,0.2);
+}
+
+/* meld-group 精美化 */
+.meld-group {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+/* discard-area 精美化 */
+.discard-area {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* 遊戲桌面木框邊條 */
+#game-container::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.06);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 3D 牌翻轉動畫（出牌時） */
+@keyframes cardFlip {
+  0%   { transform: perspective(400px) rotateY(0deg) scale(1); }
+  40%  { transform: perspective(400px) rotateY(-90deg) scale(1.1); }
+  60%  { transform: perspective(400px) rotateY(90deg) scale(1.1); }
+  100% { transform: perspective(400px) rotateY(0deg) scale(1); }
+}
+.tile.just-discarded {
+  animation: cardFlip 0.35s ease forwards;
+}

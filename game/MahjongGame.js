@@ -259,6 +259,7 @@ class MahjongGame {
       dice: this.dice,
       dealer: this.dealer,
       players: this.players.map(p => ({
+        userId:   p.userId,
         username: p.username,
         wind: p.wind,
         windName: windNames[p.wind],

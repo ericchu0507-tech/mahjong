@@ -52,14 +52,15 @@ function scaleGameToFit() {
   if (!gc || gc.style.display === 'none') return;
 
   const LOGICAL_W = 2600;
-  const naturalH  = gc.scrollHeight || 900;
+  const LOGICAL_H = 900; // 固定高度，避免縮放抖動
 
   const scaleX = window.innerWidth  / LOGICAL_W;
-  const scaleY = window.innerHeight / naturalH;
+  const scaleY = window.innerHeight / LOGICAL_H;
+  const naturalH = LOGICAL_H;
   const scale  = Math.min(scaleX, scaleY, 1);
 
   const scaledW = LOGICAL_W * scale;
-  const scaledH = naturalH  * scale;
+  const scaledH = LOGICAL_H * scale;
 
   gc.style.transform       = `scale(${scale})`;
   gc.style.transformOrigin = 'top left';
@@ -425,6 +426,19 @@ function onSurrenderGame() {
 // ==========================================
 function renderServerState(state) {
   if (!state) return;
+
+  // ── 出牌動畫：偵測到新棄牌時觸發 ──
+  const prevDiscardId = window._lastPendingDiscardId;
+  const currDiscardId = state.pendingDiscard?.id;
+  if (currDiscardId && currDiscardId !== prevDiscardId) {
+    const fromPlayer = state.players[state.pendingFromSeat];
+    const fromName = fromPlayer?.userId === currentUser?.id
+      ? '你'
+      : (fromPlayer?.username || '?');
+    showDiscardCenter(state.pendingDiscard, fromName);
+  }
+  window._lastPendingDiscardId = currDiscardId ?? null;
+
   window._lastGameState = state;
   window._myGameSeat    = state.mySeat;
 
@@ -456,13 +470,31 @@ function renderServerState(state) {
     const nameEl  = document.getElementById(VISUAL_NAME[vpos]);
     const scoreEl = document.getElementById(VISUAL_SCORE[vpos]);
     const windEl  = document.getElementById(VISUAL_WIND[vpos]);
-    if (nameEl)  nameEl.textContent  = isMe ? '你' : p.username;
+
+    const isCurrentTurn = seat === state.currentSeat && state.phase === 'playing';
+    const emoji = getAvatar(p.userId);
+
+    if (nameEl) {
+      nameEl.textContent = (isMe ? '你' : p.username);
+      // 更新 player-info 的 active-turn 樣式
+      const infoEl = nameEl.closest('.player-info');
+      if (infoEl) {
+        infoEl.classList.toggle('active-turn', isCurrentTurn && !isMe);
+        infoEl.classList.toggle('my-turn', isCurrentTurn && isMe);
+      }
+    }
     if (scoreEl) scoreEl.textContent = `$${p.score}`;
     if (windEl) {
       windEl.textContent = isDealer
         ? `${windNames[p.wind] || '?'} 莊`
         : (windNames[p.wind] || '?');
       windEl.classList.toggle('dealer', isDealer);
+    }
+    // 更新 avatar emoji + 動畫
+    const avatarEl = nameEl?.closest('.player-info')?.querySelector('.avatar');
+    if (avatarEl) {
+      avatarEl.textContent = emoji;
+      avatarEl.classList.toggle('active', isCurrentTurn);
     }
 
     // 棄牌
@@ -959,8 +991,10 @@ function showIntroAnimation(intro) {
   const windColors  = { dong:'#e53935', nan:'#1565c0', xi:'#2e7d32', bei:'#555' };
   const diceFaces   = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
   const diceSum     = intro.dice.reduce((a,b)=>a+b,0);
-  const myIdx       = 0; // 我是 players[0]（人類玩家）
-  const myWind      = intro.players[myIdx]?.wind;
+  // 用 userId 找自己的座位（排序後 players[0] 不一定是我）
+  const myIdx       = intro.players.findIndex(p => p.userId === currentUser?.id);
+  const myActualIdx = myIdx >= 0 ? myIdx : 0;
+  const myWind      = intro.players[myActualIdx]?.wind;
   const myWindName  = windNames[myWind] || '?';
 
   // 第一階段：4張牌背，我點一張
@@ -974,7 +1008,7 @@ function showIntroAnimation(intro) {
   // 建立 4 張牌背，洗風的順序
   const winds = ['dong','nan','xi','bei'];
   // 把我的風放在隨機位置，其餘隨機排
-  const others = intro.players.slice(1).map(p => p.wind);
+  const others = intro.players.filter((_, i) => i !== myActualIdx).map(p => p.wind);
   const allWinds = [...others, myWind];
   // 隨機排列這 4 個風的顯示位置
   for (let i = allWinds.length-1; i>0; i--) {
@@ -996,7 +1030,7 @@ function showIntroAnimation(intro) {
 
       // 被點的那張永遠顯示玩家真實的風（myWind）
       // 其餘三張隨機分配其他人的風
-      const otherWinds = intro.players.slice(1).map(p => p.wind);
+      const otherWinds = intro.players.filter((_, idx) => idx !== myActualIdx).map(p => p.wind);
       for (let j = otherWinds.length - 1; j > 0; j--) {
         const k = Math.floor(Math.random() * (j + 1));
         [otherWinds[j], otherWinds[k]] = [otherWinds[k], otherWinds[j]];
@@ -1117,6 +1151,48 @@ function revealAllHands(result) {
 function hideIntroAnimation() {
   const el = document.getElementById('intro-overlay');
   if (el) el.remove();
+}
+
+// ==========================================
+// 角色頭像 Emoji 分配（依 userId 固定）
+// ==========================================
+const AVATARS = ['😀','🤖','🐼','🦊','🐯','🐻','🐸','🦁'];
+const _avatarMap = new Map();
+let _avatarCounter = 0;
+function getAvatar(userId) {
+  if (!_avatarMap.has(userId)) {
+    _avatarMap.set(userId, AVATARS[_avatarCounter++ % AVATARS.length]);
+  }
+  return _avatarMap.get(userId);
+}
+
+// ==========================================
+// 出牌放大顯示（1 秒）
+// ==========================================
+let _discardCenterTimer = null;
+function showDiscardCenter(tile, fromName) {
+  const overlay = document.getElementById('discard-center-overlay');
+  if (!overlay) return;
+  if (_discardCenterTimer) clearTimeout(_discardCenterTimer);
+
+  const nameEl = document.getElementById('discard-center-name');
+  const tileEl = document.getElementById('discard-center-tile');
+  if (nameEl) nameEl.textContent = fromName ? `${fromName} 出牌` : '';
+
+  if (tileEl) {
+    tileEl.innerHTML = '';
+    const t = createTileElement(tile, false, false);
+    t.classList.add('discard-center-anim');
+    tileEl.appendChild(t);
+  }
+
+  overlay.classList.add('show');
+  overlay.style.display = 'flex';
+
+  _discardCenterTimer = setTimeout(() => {
+    overlay.style.display = 'none';
+    overlay.classList.remove('show');
+  }, 1000);
 }
 
 // ==========================================

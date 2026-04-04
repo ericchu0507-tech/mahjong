@@ -257,6 +257,14 @@
     </div>
   </div>
 
+<!-- 出牌放大動畫 overlay -->
+<div id="discard-center-overlay" style="display:none;position:fixed;inset:0;z-index:148;
+  pointer-events:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div id="discard-center-name" style="font-size:20px;color:#fff;font-weight:bold;
+    text-shadow:0 2px 8px rgba(0,0,0,0.8);letter-spacing:2px;"></div>
+  <div id="discard-center-tile"></div>
+</div>
+
 <!-- 通知 Toast -->
 <div id="game-toast" style="display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);
   background:rgba(30,30,50,0.95);color:#fff;padding:10px 22px;border-radius:20px;
