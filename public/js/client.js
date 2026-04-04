@@ -47,25 +47,34 @@ function showScreen(id) {
 }
 
 // 自動縮放遊戲桌以符合螢幕大小
-let _cachedGameH = 0;
 function scaleGameToFit() {
   const gc = document.getElementById('game-container');
   if (!gc || gc.style.display === 'none') return;
 
   const LOGICAL_W = 2600;
-  const LOGICAL_H = 1100; // 固定邏輯高度，與 CSS height 一致
 
-  const scaleX = window.innerWidth  / LOGICAL_W;
-  const scaleY = window.innerHeight / LOGICAL_H;
-  const scale  = Math.min(scaleX, scaleY, 1);
+  // 第一步：先取消 transform，讓瀏覽器以原始尺寸 reflow
+  gc.style.transform = 'none';
+  gc.style.left = '0';
+  gc.style.top  = '0';
 
-  const scaledW = LOGICAL_W * scale;
-  const scaledH = LOGICAL_H * scale;
+  // 第二步：等下一幀量真實高度，再套 scale
+  requestAnimationFrame(() => {
+    const naturalH = gc.offsetHeight;
+    if (!naturalH) return;
 
-  gc.style.transform       = `scale(${scale})`;
-  gc.style.transformOrigin = 'top left';
-  gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
-  gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
+    const scaleX = window.innerWidth  / LOGICAL_W;
+    const scaleY = window.innerHeight / naturalH;
+    const scale  = Math.min(scaleX, scaleY, 1);
+
+    const scaledW = LOGICAL_W * scale;
+    const scaledH = naturalH  * scale;
+
+    gc.style.transform       = `scale(${scale})`;
+    gc.style.transformOrigin = 'top left';
+    gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
+    gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
+  });
 }
 window.addEventListener('resize', scaleGameToFit);
 
