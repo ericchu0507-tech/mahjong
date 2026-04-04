@@ -224,7 +224,7 @@ function connectSocket() {
 
   // 有人胡牌
   socket.on('game:hu', (result) => {
-    playTone('hu');
+    speakChinese('胡牌');
     showActionAnnounce('hu', result.winnerName || '');
     const mySeat     = window._myGameSeat || 0;
     const isSelf     = result.winnerSeat === mySeat;
@@ -385,19 +385,16 @@ function connectSocket() {
       `<div style="font-size:12px;color:#aaa;margin-bottom:6px;">最終排名（起始 $${STARTS}）</div>${rows}`;
     window._gameProgression = { gameOver: true };
     const continueBtn = document.getElementById('btn-continue-game');
-    if (continueBtn) continueBtn.style.display = 'none';
+    if (continueBtn) { continueBtn.style.display = ''; continueBtn.textContent = '開始下一將（重新抽風）'; }
     document.getElementById('win-overlay').style.display = 'flex';
   });
 
-  // 按鈕接線：下一局 / 回大廳
+  // 按鈕接線：下一局 / 下一將 / 回大廳
   document.getElementById('btn-continue-game')?.addEventListener('click', () => {
     document.getElementById('win-overlay').style.display = 'none';
-    document.getElementById('btn-continue-game').style.display = '';
-    if (window._gameProgression?.gameOver) {
-      showLobby();
-    } else {
-      if (socket) socket.emit('room:next_round');
-    }
+    const btn = document.getElementById('btn-continue-game');
+    if (btn) { btn.textContent = '下一局'; btn.style.display = ''; }
+    if (socket) socket.emit('room:next_round');
   });
   document.getElementById('btn-play-again')?.addEventListener('click', () => {
     document.getElementById('win-overlay').style.display = 'none';
@@ -607,9 +604,9 @@ function renderServerState(state) {
       const newMeld = p.melds?.[curr - 1];
       const type = newMeld?.type;
       const who = p.userId === currentUser?.id ? '你' : p.username;
-      if (type === 'chi')  { showActionAnnounce('chi', who);  playTone('chi'); }
-      if (type === 'peng') { showActionAnnounce('peng', who); playTone('peng'); }
-      if (['gang','jiagang','angang'].includes(type)) { showActionAnnounce('gang', who); playTone('gang'); }
+      if (type === 'chi')  { showActionAnnounce('chi', who);  speakChinese('吃'); }
+      if (type === 'peng') { showActionAnnounce('peng', who); speakChinese('碰'); }
+      if (['gang','jiagang','angang'].includes(type)) { showActionAnnounce('gang', who); speakChinese('槓'); }
     }
     window._prevMeldCounts[p.userId] = curr;
   });
@@ -1223,55 +1220,63 @@ function showDiscardCenter(tile, fromName) {
 }
 
 // ==========================================
-// 音效（Web Audio API 合成，不需音訊檔）
+// 音效
 // ==========================================
 let _audioCtx = null;
 function getAudioCtx() {
   if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return _audioCtx;
 }
+
+// 短音效（摸牌/出牌/補花 用合成音）
 function playTone(type) {
   try {
     const ctx = getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
     const configs = {
-      draw:    { freq: 440, type: 'triangle', dur: 0.08, vol: 0.18 },
-      discard: { freq: 660, type: 'sine',     dur: 0.07, vol: 0.22 },
-      chi:     { freq: [440,550], type: 'triangle', dur: 0.18, vol: 0.28 },
-      peng:    { freq: [550,700], type: 'square',   dur: 0.22, vol: 0.20 },
-      gang:    { freq: [300,200], type: 'sawtooth', dur: 0.35, vol: 0.25 },
-      hu:      { freq: [523,659,784,1047], type: 'sine', dur: 0.8, vol: 0.30 },
-      flower:  { freq: [880,1100], type: 'triangle', dur: 0.25, vol: 0.18 },
+      draw:    { freq: 480, waveType: 'triangle', dur: 0.07, vol: 0.15 },
+      discard: { freq: 700, waveType: 'sine',     dur: 0.06, vol: 0.18 },
+      flower:  { freq: [880,1100], waveType: 'triangle', dur: 0.2, vol: 0.15 },
+      hu:      { freq: [523,659,784,1047], waveType: 'sine', dur: 0.7, vol: 0.25 },
     };
-    const c = configs[type] || configs.discard;
+    const c = configs[type];
+    if (!c) return;
     const now = ctx.currentTime;
-
     if (Array.isArray(c.freq)) {
-      // 連續音符
       c.freq.forEach((f, i) => {
-        const o2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        o2.connect(g2); g2.connect(ctx.destination);
-        o2.type = c.type;
-        o2.frequency.setValueAtTime(f, now + i * c.dur / c.freq.length);
-        g2.gain.setValueAtTime(c.vol, now + i * c.dur / c.freq.length);
-        g2.gain.exponentialRampToValueAtTime(0.001, now + (i + 1) * c.dur / c.freq.length);
-        o2.start(now + i * c.dur / c.freq.length);
-        o2.stop(now + (i + 1) * c.dur / c.freq.length);
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = c.waveType;
+        const t0 = now + i * c.dur / c.freq.length;
+        const t1 = now + (i+1) * c.dur / c.freq.length;
+        o.frequency.setValueAtTime(f, t0);
+        g.gain.setValueAtTime(c.vol, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t1);
+        o.start(t0); o.stop(t1);
       });
     } else {
-      osc.type = c.type;
-      osc.frequency.setValueAtTime(c.freq, now);
-      gain.gain.setValueAtTime(c.vol, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + c.dur);
-      osc.start(now);
-      osc.stop(now + c.dur);
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = c.waveType;
+      o.frequency.setValueAtTime(c.freq, now);
+      g.gain.setValueAtTime(c.vol, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + c.dur);
+      o.start(now); o.stop(now + c.dur);
     }
-  } catch (e) { /* 瀏覽器不支援就靜音 */ }
+  } catch (e) {}
+}
+
+// 中文語音播報（吃/碰/槓/胡）
+function speakChinese(text) {
+  try {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'zh-TW';
+    utter.rate  = 1.1;
+    utter.pitch = 1.1;
+    utter.volume = 1.0;
+    window.speechSynthesis.speak(utter);
+  } catch (e) {}
 }
 
 // ==========================================

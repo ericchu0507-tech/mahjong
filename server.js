@@ -272,14 +272,12 @@ io.on('connection', (socket) => {
     if (!room || room.status === 'playing') return;
 
     if (room.gameOver) {
-      // 一將完成，發送最終結算
-      io.to(roomId).emit('game:tournament_end', {
-        players: room.players.map(p => ({
-          userId: p.userId, username: p.username,
-          score:  p.score,  isBot:   p.isBot,
-        })),
-      });
-      return;
+      // 一將完成 → 重置進程，重新抽風開始下一將
+      room.gameOver        = false;
+      room.roundWindIdx    = 0;
+      room.dealerRotations = 0;
+      room.dealerStreak    = 0;
+      room.windOrderUserIds = []; // 清空 → 下一局重新隨機抽風
     }
 
     startGame(roomId);
