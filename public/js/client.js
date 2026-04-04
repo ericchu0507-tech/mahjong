@@ -47,36 +47,51 @@ function showScreen(id) {
 }
 
 // 自動縮放遊戲桌以符合螢幕大小
-function scaleGameToFit() {
+// naturalH 只量一次，之後快取，避免每次 action 都 reflow 閃爍
+let _gameNaturalH = 0;
+
+function measureAndScale() {
   const gc = document.getElementById('game-container');
-  if (!gc || gc.style.display === 'none') return;
-
-  const LOGICAL_W = 2600;
-
-  // 第一步：先取消 transform，讓瀏覽器以原始尺寸 reflow
+  if (!gc) return;
+  // 暫時移除 transform 量真實高度
   gc.style.transform = 'none';
   gc.style.left = '0';
   gc.style.top  = '0';
-
-  // 第二步：等下一幀量真實高度，再套 scale
   requestAnimationFrame(() => {
-    const naturalH = gc.offsetHeight;
-    if (!naturalH) return;
-
-    const scaleX = window.innerWidth  / LOGICAL_W;
-    const scaleY = window.innerHeight / naturalH;
-    const scale  = Math.min(scaleX, scaleY, 1);
-
-    const scaledW = LOGICAL_W * scale;
-    const scaledH = naturalH  * scale;
-
-    gc.style.transform       = `scale(${scale})`;
-    gc.style.transformOrigin = 'top left';
-    gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
-    gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
+    const h = gc.offsetHeight;
+    if (h > 100) { _gameNaturalH = h; }
+    applyScale();
   });
 }
-window.addEventListener('resize', scaleGameToFit);
+
+function applyScale() {
+  const gc = document.getElementById('game-container');
+  if (!gc || gc.style.display === 'none' || !_gameNaturalH) return;
+  const LOGICAL_W = 2600;
+  const scale  = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / _gameNaturalH, 1);
+  const scaledW = LOGICAL_W * scale;
+  const scaledH = _gameNaturalH * scale;
+  gc.style.transform       = `scale(${scale})`;
+  gc.style.transformOrigin = 'top left';
+  gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
+  gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
+}
+
+function scaleGameToFit() {
+  // 只有還沒量到高度時才重新量，其他時候直接套 scale（不 reflow，不閃）
+  if (!_gameNaturalH) {
+    measureAndScale();
+  } else {
+    applyScale();
+  }
+}
+
+window.addEventListener('resize', () => {
+  // 視窗大小改變時重新量高度
+  _gameNaturalH = 0;
+  measureAndScale();
+});
+// resize 已在 scaleGameToFit 定義區塊內處理
 
 function showLobby() {
   showScreen('lobby-overlay');
@@ -206,6 +221,9 @@ function connectSocket() {
   socket.on('game:start', (state) => {
     hideIntroAnimation();
     showScreen('game');
+    _gameNaturalH = 0; // 每次開局重新量高度一次
+    const gc = document.getElementById('game-container');
+    if (gc) { gc.classList.add('entering'); setTimeout(() => gc.classList.remove('entering'), 600); }
     renderServerState(state);
   });
 
