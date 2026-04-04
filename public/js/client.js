@@ -53,20 +53,14 @@ function scaleGameToFit() {
   if (!gc || gc.style.display === 'none') return;
 
   const LOGICAL_W = 2600;
-
-  // 重設 transform 才能量到真實高度
-  gc.style.transform = 'none';
-  gc.style.left = '0';
-  gc.style.top  = '0';
-  const naturalH = gc.offsetHeight || _cachedGameH || 900;
-  if (naturalH > 100) _cachedGameH = naturalH; // 快取，避免量到 0
+  const LOGICAL_H = 1100; // 固定邏輯高度，與 CSS height 一致
 
   const scaleX = window.innerWidth  / LOGICAL_W;
-  const scaleY = window.innerHeight / naturalH;
+  const scaleY = window.innerHeight / LOGICAL_H;
   const scale  = Math.min(scaleX, scaleY, 1);
 
   const scaledW = LOGICAL_W * scale;
-  const scaledH = naturalH  * scale;
+  const scaledH = LOGICAL_H * scale;
 
   gc.style.transform       = `scale(${scale})`;
   gc.style.transformOrigin = 'top left';
