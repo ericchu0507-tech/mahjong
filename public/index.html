@@ -257,6 +257,9 @@
     </div>
   </div>
 
+<!-- 吃碰槓胡 動作公告 -->
+<div id="action-announce"></div>
+
 <!-- 出牌放大動畫 overlay -->
 <div id="discard-center-overlay" style="display:none;position:fixed;inset:0;z-index:148;
   pointer-events:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
@@ -338,29 +341,46 @@
         <h3>基本規則</h3>
         <ul>
           <li>每人起手 <b>16 張</b>，莊家先出牌</li>
-          <li>胡牌 = <b>5 面子 + 1 對</b>（共 17 張）</li>
-          <li><b>吃</b>：只能吃上家棄牌（順子）</li>
-          <li><b>碰</b>：任何人棄牌皆可碰（刻子）</li>
-          <li><b>明槓</b>：不能槓上家棄牌，只能槓其他家</li>
-          <li><b>暗槓</b>：摸牌時手上已有 4 張</li>
-          <li><b>留局</b>：牌牆剩 16 張時不能繼續摸牌</li>
+          <li>胡牌牌型：<b>4 面子 + 1 對</b>（共 14 張不含花）</li>
+          <li><b>吃</b>：只能吃<b>上家</b>棄牌（順子）</li>
+          <li><b>碰</b>：任何人棄牌皆可碰（刻子），<b>碰優先於吃</b></li>
+          <li><b>加槓</b>：摸到已碰的第 4 張，可升級為槓</li>
+          <li><b>暗槓</b>：手牌有 4 張相同時可暗槓</li>
+          <li><b>明槓</b>：任何人棄牌（非上家）有 3 張可槓</li>
+          <li><b>留局</b>：牌牆剩 16 張無人胡牌，莊家留莊</li>
         </ul>
+
         <h3>計分（台數）</h3>
         <table class="rules-table">
-          <tr><th>牌型</th><th>台數</th></tr>
-          <tr><td>底台</td><td>1台</td></tr>
-          <tr><td>自摸</td><td>+1台</td></tr>
-          <tr><td>門前清（無吃碰槓）</td><td>+1台</td></tr>
-          <tr><td>花牌</td><td>每張 +1台</td></tr>
-          <tr><td>平胡（全順子）</td><td>+1台</td></tr>
-          <tr><td>碰碰胡（全刻子）</td><td>+2台</td></tr>
-          <tr><td>混一色</td><td>+2台</td></tr>
-          <tr><td>清一色</td><td>+4台</td></tr>
-          <tr><td>字一色</td><td>+4台</td></tr>
-          <tr><td>一條龍（1-9同花色）</td><td>+3台</td></tr>
-          <tr><td>小三元</td><td>+2台</td></tr>
-          <tr><td>大三元</td><td>+4台</td></tr>
+          <tr><th>項目</th><th>台數</th><th>說明</th></tr>
+          <tr><td>底台</td><td>N 台</td><td>房主設定，預設 3 台</td></tr>
+          <tr><td>莊家首局</td><td>+1 台</td><td>莊家贏或莊家放槍</td></tr>
+          <tr><td>連莊 N 次</td><td>+N+N 台</td><td>莊家 +N、拉莊 +N（可疊加）</td></tr>
+          <tr><td>門前清</td><td>+1 台</td><td>無吃碰明槓</td></tr>
+          <tr><td>自摸</td><td>+1 台</td><td>三家各付；非莊自摸莊家多付 1 台</td></tr>
+          <tr><td>花牌（符合方位）</td><td>每張 +1 台</td><td>東↔春梅、南↔夏蘭、西↔秋竹、北↔冬菊；不符合不算</td></tr>
+          <tr><td>圈風刻子</td><td>+1 台</td><td>刻子的風與當前圈風相同</td></tr>
+          <tr><td>門風刻子</td><td>+1 台</td><td>刻子的風與自己座位風相同（可與圈風疊加）</td></tr>
+          <tr><td>中刻 / 發刻 / 白刻</td><td>各 +1 台</td><td>三元牌各自計算，可三疊</td></tr>
+          <tr><td>混一色</td><td>+4 台</td><td>一色數牌 + 字牌</td></tr>
+          <tr><td>清一色</td><td>+8 台</td><td>全部同一花色數牌</td></tr>
+          <tr><td>字一色</td><td>+8 台</td><td>全部字牌（東南西北中發白）</td></tr>
         </table>
+
+        <h3>付款方式</h3>
+        <ul>
+          <li><b>放槍胡</b>：只有放槍者付款</li>
+          <li><b>自摸胡</b>：三家各付相同台數</li>
+          <li><b>非莊自摸</b>：莊家比其他家多付 1 台</li>
+        </ul>
+
+        <h3>遊戲進程</h3>
+        <ul>
+          <li>莊家胡牌或留局 → <b>連莊</b></li>
+          <li>非莊胡牌 → 換下一人當莊（東→南→西→北）</li>
+          <li>四人各當過莊 = 換圈風（東風圈→南風圈→…）</li>
+          <li>四圈全打完 = <b>一將結束</b>，顯示最終排名</li>
+        </ul>
       </div>
 
       <!-- 美國麻將 -->

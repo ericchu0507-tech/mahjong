@@ -47,20 +47,26 @@ function showScreen(id) {
 }
 
 // 自動縮放遊戲桌以符合螢幕大小
+let _cachedGameH = 0;
 function scaleGameToFit() {
   const gc = document.getElementById('game-container');
   if (!gc || gc.style.display === 'none') return;
 
   const LOGICAL_W = 2600;
-  const LOGICAL_H = 900; // 固定高度，避免縮放抖動
+
+  // 重設 transform 才能量到真實高度
+  gc.style.transform = 'none';
+  gc.style.left = '0';
+  gc.style.top  = '0';
+  const naturalH = gc.offsetHeight || _cachedGameH || 900;
+  if (naturalH > 100) _cachedGameH = naturalH; // 快取，避免量到 0
 
   const scaleX = window.innerWidth  / LOGICAL_W;
-  const scaleY = window.innerHeight / LOGICAL_H;
-  const naturalH = LOGICAL_H;
+  const scaleY = window.innerHeight / naturalH;
   const scale  = Math.min(scaleX, scaleY, 1);
 
   const scaledW = LOGICAL_W * scale;
-  const scaledH = LOGICAL_H * scale;
+  const scaledH = naturalH  * scale;
 
   gc.style.transform       = `scale(${scale})`;
   gc.style.transformOrigin = 'top left';
@@ -224,6 +230,8 @@ function connectSocket() {
 
   // 有人胡牌
   socket.on('game:hu', (result) => {
+    playTone('hu');
+    showActionAnnounce('hu', result.winnerName || '');
     const mySeat     = window._myGameSeat || 0;
     const isSelf     = result.winnerSeat === mySeat;
     const winnerName = result.winnerName || '玩家';
@@ -436,8 +444,16 @@ function renderServerState(state) {
       ? '你'
       : (fromPlayer?.username || '?');
     showDiscardCenter(state.pendingDiscard, fromName);
+    playTone('discard');
   }
   window._lastPendingDiscardId = currDiscardId ?? null;
+
+  // ── 摸牌音效（換到我的回合且有 drawnTile）──
+  if (state.phase === 'playing' && state.currentSeat === state.mySeat &&
+      state.drawnTile && state.drawnTile?.id !== window._lastDrawnTileId) {
+    playTone('draw');
+    window._lastDrawnTileId = state.drawnTile.id;
+  }
 
   window._lastGameState = state;
   window._myGameSeat    = state.mySeat;
@@ -583,8 +599,25 @@ function renderServerState(state) {
     if (prev >= 0 && curr > prev) {
       const who = p.userId === currentUser?.id ? '你' : p.username;
       showToast(`🌸 ${who} 補花！`);
+      playTone('flower');
     }
     window._prevFlowerCounts[p.userId] = curr;
+  });
+
+  // ── 吃碰槓公告（面子張數增加時）──
+  if (!window._prevMeldCounts) window._prevMeldCounts = {};
+  state.players.forEach(p => {
+    const prev = window._prevMeldCounts[p.userId] ?? -1;
+    const curr = p.melds?.length || 0;
+    if (prev >= 0 && curr > prev) {
+      const newMeld = p.melds?.[curr - 1];
+      const type = newMeld?.type;
+      const who = p.userId === currentUser?.id ? '你' : p.username;
+      if (type === 'chi')  { showActionAnnounce('chi', who);  playTone('chi'); }
+      if (type === 'peng') { showActionAnnounce('peng', who); playTone('peng'); }
+      if (['gang','jiagang','angang'].includes(type)) { showActionAnnounce('gang', who); playTone('gang'); }
+    }
+    window._prevMeldCounts[p.userId] = curr;
   });
 
   // ── 聽牌提示（只顯示給自己）──
@@ -1193,6 +1226,77 @@ function showDiscardCenter(tile, fromName) {
     overlay.style.display = 'none';
     overlay.classList.remove('show');
   }, 1000);
+}
+
+// ==========================================
+// 音效（Web Audio API 合成，不需音訊檔）
+// ==========================================
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+function playTone(type) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const configs = {
+      draw:    { freq: 440, type: 'triangle', dur: 0.08, vol: 0.18 },
+      discard: { freq: 660, type: 'sine',     dur: 0.07, vol: 0.22 },
+      chi:     { freq: [440,550], type: 'triangle', dur: 0.18, vol: 0.28 },
+      peng:    { freq: [550,700], type: 'square',   dur: 0.22, vol: 0.20 },
+      gang:    { freq: [300,200], type: 'sawtooth', dur: 0.35, vol: 0.25 },
+      hu:      { freq: [523,659,784,1047], type: 'sine', dur: 0.8, vol: 0.30 },
+      flower:  { freq: [880,1100], type: 'triangle', dur: 0.25, vol: 0.18 },
+    };
+    const c = configs[type] || configs.discard;
+    const now = ctx.currentTime;
+
+    if (Array.isArray(c.freq)) {
+      // 連續音符
+      c.freq.forEach((f, i) => {
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.connect(g2); g2.connect(ctx.destination);
+        o2.type = c.type;
+        o2.frequency.setValueAtTime(f, now + i * c.dur / c.freq.length);
+        g2.gain.setValueAtTime(c.vol, now + i * c.dur / c.freq.length);
+        g2.gain.exponentialRampToValueAtTime(0.001, now + (i + 1) * c.dur / c.freq.length);
+        o2.start(now + i * c.dur / c.freq.length);
+        o2.stop(now + (i + 1) * c.dur / c.freq.length);
+      });
+    } else {
+      osc.type = c.type;
+      osc.frequency.setValueAtTime(c.freq, now);
+      gain.gain.setValueAtTime(c.vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + c.dur);
+      osc.start(now);
+      osc.stop(now + c.dur);
+    }
+  } catch (e) { /* 瀏覽器不支援就靜音 */ }
+}
+
+// ==========================================
+// 吃碰槓胡 動作公告動畫
+// ==========================================
+let _announceTimer = null;
+function showActionAnnounce(type, playerName) {
+  const el = document.getElementById('action-announce');
+  if (!el) return;
+  if (_announceTimer) { clearTimeout(_announceTimer); el.innerHTML = ''; }
+
+  const labels = { chi: '吃', peng: '碰', gang: '槓', hu: '胡' };
+  const label = labels[type] || type;
+
+  el.innerHTML = `
+    <div class="action-badge ${type}">${label}</div>
+    <div class="action-badge-name">${escHtml(playerName)}</div>
+  `;
+  _announceTimer = setTimeout(() => { el.innerHTML = ''; }, 1400);
 }
 
 // ==========================================
