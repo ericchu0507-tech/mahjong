@@ -655,8 +655,8 @@ function renderServerState(state) {
     }
   }
 
-  // 確保縮放正確（手牌渲染後重新量測）
-  requestAnimationFrame(scaleGameToFit);
+  // 縮放只在開局首次量測，state 更新不重算（避免閃爍）
+  if (!_gameNaturalH) requestAnimationFrame(scaleGameToFit);
 }
 
 let _selectedTile = null;
@@ -667,7 +667,9 @@ function onMyTileClick(tile, el) {
 }
 function onMyTileDiscard(tile) {
   const state = window._lastGameState;
-  if (!state || state.currentSeat !== state.mySeat) return;
+  if (!state) return;
+  if (state.phase !== 'playing') return;
+  if (state.currentSeat !== state.mySeat) return;
   sendGameAction('discard', { tileId: tile.id });
   _selectedTile = null;
 }
