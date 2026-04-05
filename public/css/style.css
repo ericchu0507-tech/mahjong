@@ -223,6 +223,17 @@ body {
     );
 }
 
+/* 其他玩家手牌背面 — 縮小以節省空間，自己的牌不受影響 */
+.hand-top .tile-back {
+  width: 36px;
+  height: 50px;
+}
+.hand-left .tile-back,
+.hand-right .tile-back {
+  width: 26px;
+  height: 38px;
+}
+
 /* 直向牌（左右玩家用） */
 .tile-vertical {
   width: 42px;
