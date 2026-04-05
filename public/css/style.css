@@ -25,9 +25,8 @@ body {
 #game-container {
   width: 2600px;
   height: 1050px;
-  display: grid;
-  grid-template-rows: auto 1fr minmax(215px, auto);
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   background: #1a5c1e;
   background-image:
     radial-gradient(ellipse at 50% 35%, #2e7d32 0%, #1b5e20 45%, #0f3d12 100%),
@@ -68,6 +67,8 @@ body {
   align-items: center;
   gap: 8px;
   padding: 0 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ==========================================
@@ -391,6 +392,7 @@ body {
 .player-bottom {
   flex-direction: column;
   padding-bottom: 4px;
+  flex-shrink: 0;
 }
 
 /* 左右玩家 */
