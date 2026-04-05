@@ -258,6 +258,7 @@ class MahjongGame {
     return {
       dice: this.dice,
       dealer: this.dealer,
+      roundWindIdx: this.roundWindIdx,
       players: this.players.map(p => ({
         userId:   p.userId,
         username: p.username,

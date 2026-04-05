@@ -47,51 +47,23 @@ function showScreen(id) {
 }
 
 // 自動縮放遊戲桌以符合螢幕大小
-// naturalH 只量一次，之後快取，避免每次 action 都 reflow 閃爍
-let _gameNaturalH = 0;
+// 固定邏輯尺寸（與 CSS 的 width/height 一致，永遠不變）
+const GAME_W = 2600;
+const GAME_H = 950;
 
-function measureAndScale() {
+function scaleGameToFit() {
   const gc = document.getElementById('game-container');
-  if (!gc) return;
-  // 暫時移除 transform 量真實高度
-  gc.style.transform = 'none';
-  gc.style.left = '0';
-  gc.style.top  = '0';
-  requestAnimationFrame(() => {
-    const h = gc.offsetHeight;
-    if (h > 100) { _gameNaturalH = h; }
-    applyScale();
-  });
-}
-
-function applyScale() {
-  const gc = document.getElementById('game-container');
-  if (!gc || gc.style.display === 'none' || !_gameNaturalH) return;
-  const LOGICAL_W = 2600;
-  const scale  = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / _gameNaturalH, 1);
-  const scaledW = LOGICAL_W * scale;
-  const scaledH = _gameNaturalH * scale;
+  if (!gc || gc.style.display === 'none') return;
+  const scale  = Math.min(window.innerWidth / GAME_W, window.innerHeight / GAME_H, 1);
+  const scaledW = GAME_W * scale;
+  const scaledH = GAME_H * scale;
   gc.style.transform       = `scale(${scale})`;
   gc.style.transformOrigin = 'top left';
   gc.style.left            = `${(window.innerWidth  - scaledW) / 2}px`;
   gc.style.top             = `${(window.innerHeight - scaledH) / 2}px`;
 }
 
-function scaleGameToFit() {
-  // 只有還沒量到高度時才重新量，其他時候直接套 scale（不 reflow，不閃）
-  if (!_gameNaturalH) {
-    measureAndScale();
-  } else {
-    applyScale();
-  }
-}
-
-window.addEventListener('resize', () => {
-  // 視窗大小改變時重新量高度
-  _gameNaturalH = 0;
-  measureAndScale();
-});
-// resize 已在 scaleGameToFit 定義區塊內處理
+window.addEventListener('resize', scaleGameToFit);
 
 function showLobby() {
   showScreen('lobby-overlay');
@@ -215,13 +187,16 @@ function connectSocket() {
   // 遊戲開始 — 伺服器發送初始狀態
   // 開場動畫（抽風 + 骰子）
   socket.on('game:intro', (intro) => {
-    showIntroAnimation(intro);
+    if (intro.isNewGame) {
+      showIntroAnimation(intro);       // 新一將：完整抽風 + 骰子動畫
+    } else {
+      showRoundIntro(intro);           // 同一將換莊：只播骰子 + 顯示風位
+    }
   });
 
   socket.on('game:start', (state) => {
     hideIntroAnimation();
     showScreen('game');
-    _gameNaturalH = 0; // 每次開局重新量高度一次
     const gc = document.getElementById('game-container');
     if (gc) { gc.classList.add('entering'); setTimeout(() => gc.classList.remove('entering'), 600); }
     renderServerState(state);
@@ -655,8 +630,7 @@ function renderServerState(state) {
     }
   }
 
-  // 縮放只在開局首次量測，state 更新不重算（避免閃爍）
-  if (!_gameNaturalH) requestAnimationFrame(scaleGameToFit);
+  // 縮放由 showScreen/resize 負責，state 更新不重算
 }
 
 let _selectedTile = null;
@@ -1121,6 +1095,69 @@ function showIntroAnimation(intro) {
     });
     cardsEl.appendChild(card);
   });
+}
+
+// 同一將換莊：只顯示骰子 + 風位（不抽風）
+function showRoundIntro(intro) {
+  const windNames  = { dong:'東', nan:'南', xi:'西', bei:'北' };
+  const windColors = { dong:'#e53935', nan:'#1565c0', xi:'#2e7d32', bei:'#555' };
+  const diceFaces  = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+  const diceSum    = intro.dice.reduce((a,b)=>a+b,0);
+
+  // 加樣式
+  if (!document.getElementById('intro-style')) {
+    const s = document.createElement('style');
+    s.id = 'intro-style';
+    s.textContent = `
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+      @keyframes diceRoll { 0%,100%{transform:rotate(0deg)} 25%{transform:rotate(-15deg)} 75%{transform:rotate(15deg)} }
+      .intro-dice { font-size:56px; animation: diceRoll 0.3s ease infinite; }
+      .intro-dice.settled { animation: none; }
+    `;
+    document.head.appendChild(s);
+  }
+
+  let el = document.getElementById('intro-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'intro-overlay';
+    el.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.88);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      z-index:9999;gap:24px;color:#fff;font-family:inherit;`;
+    document.body.appendChild(el);
+  }
+
+  const ROUND_WINDS = ['東','南','西','北'];
+  const roundWindName = ROUND_WINDS[intro.roundWindIdx ?? 0] || '東';
+  const dealer = intro.players[intro.dealer] || intro.players[0];
+
+  el.innerHTML = `
+    <div style="font-size:22px;font-weight:900;color:#ffcc02;letter-spacing:3px;">✦ 換莊 ✦</div>
+    <div style="font-size:14px;color:#aaa;">${roundWindName}風圈　莊家：<span style="color:${windColors[dealer.wind]};font-weight:bold;">${dealer.username}</span></div>
+    <div id="dice-row" style="display:flex;gap:20px;">
+      ${intro.dice.map(()=>`<span class="intro-dice">${diceFaces[Math.ceil(Math.random()*6)]}</span>`).join('')}
+    </div>
+    <div id="dice-sum" style="font-size:16px;color:#aaa;min-height:24px;"></div>
+    <div style="display:flex;gap:12px;">
+      ${intro.players.map(p=>`
+        <div style="text-align:center;">
+          <div style="width:48px;height:48px;border-radius:50%;background:${windColors[p.wind]};
+            display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;
+            margin:0 auto 4px;border:2px solid rgba(255,255,255,0.3);">${windNames[p.wind]}</div>
+          <div style="font-size:12px;color:#ffcc02;">${p.username}</div>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:13px;color:#666;animation:blink 1s infinite;">遊戲即將開始...</div>
+  `;
+
+  const diceEls = el.querySelectorAll('.intro-dice');
+  setTimeout(() => {
+    diceEls.forEach((d,i) => { d.classList.add('settled'); d.textContent = diceFaces[intro.dice[i]]; });
+    el.querySelector('#dice-sum').textContent = `點數合計：${diceSum}`;
+    setTimeout(() => {
+      if (socket) socket.emit('game:ready');
+    }, 2000);
+  }, 1200);
 }
 
 function showDicePhase(el, intro, diceFaces, diceSum) {

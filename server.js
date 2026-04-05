@@ -196,17 +196,28 @@ io.on('connection', (socket) => {
     handleGameAction(socket.currentRoom, socket.userId, data);
   });
 
-  // 動畫播完，玩家準備好了 → 送遊戲初始狀態並開始計時
+  // 動畫播完，玩家準備好了 → 送遊戲初始狀態
   socket.on('game:ready', () => {
     const roomId = socket.currentRoom;
     if (!roomId) return;
     const game = gameInstances.get(roomId);
     const room = rooms.get(roomId);
     if (!game || !room) return;
+
     const state = game.getStateForPlayer(socket.userId);
     socket.emit('game:start', state);
-    scheduleBotTurnIfNeeded(roomId);
-    scheduleAutoDiscard(roomId);
+
+    // 記錄有幾個真人玩家回報準備好了
+    if (!room._readyCount) room._readyCount = 0;
+    room._readyCount++;
+
+    const humanCount = room.players.filter(p => !p.isBot && !p.tempBot).length;
+    if (room._readyCount >= humanCount) {
+      // 所有真人都準備好後才啟動 bot 和倒數，避免重複觸發
+      room._readyCount = 0;
+      scheduleBotTurnIfNeeded(roomId);
+      scheduleAutoDiscard(roomId);
+    }
   });
 
   // 暫時休息（人機代打，但玩家仍在房間可隨時回來）
@@ -517,11 +528,12 @@ function startGame(roomId) {
   // 人數不足時補人機
   fillBotsIfNeeded(room);
   room.status = 'playing';
+  room._readyCount = 0; // 重置，等所有真人發 game:ready
 
+  const isNewGame = room.windOrderUserIds.length !== 4; // 新一將 = 重新抽風
   const game = new MahjongGame(room);
   gameInstances.set(roomId, game);
-  // 第一局 windOrderUserIds 為空 → 隨機分風；後續局傳入固定順序實現輪莊
-  game.start(room.windOrderUserIds.length === 4 ? room.windOrderUserIds : null);
+  game.start(isNewGame ? null : room.windOrderUserIds);
 
   // 記錄本局的風位順序（東→南→西→北 的 userId），供下一局輪莊用
   room.windOrderUserIds = game.players.map(p => p.userId);
@@ -530,19 +542,22 @@ function startGame(roomId) {
   console.log(`[Game] Room ${roomId} 遊戲開始（${room.players.filter(p=>p.isBot).length} 個人機）`);
 
   // 先送抽風/骰子動畫資訊
-  const intro = game.getIntroInfo();
+  const intro = { ...game.getIntroInfo(), isNewGame };
   room.players.filter(p => !p.isBot).forEach(p => {
     io.to(p.socketId).emit('game:intro', intro);
   });
 
-  // Client 端動畫完成後發 game:ready，server 才送 game:start
-  // 這裡設 12 秒保底，防止 client 沒收到 intro（如重連）
+  // 12 秒保底：若 client 沒送 game:ready（如斷線重連），強制啟動
   setTimeout(() => {
     const g = gameInstances.get(roomId);
     const r = rooms.get(roomId);
-    if (!g || !r) return;
-    scheduleBotTurnIfNeeded(roomId);
-    scheduleAutoDiscard(roomId);
+    if (!g || !r || g.phase === 'ended') return;
+    // 只在還沒正常啟動時才觸發（_readyCount 尚未歸零代表還有人沒準備好）
+    if ((r._readyCount || 0) > 0 || r.players.filter(p=>!p.isBot).every(p=>!p.socketId)) {
+      r._readyCount = 0;
+      scheduleBotTurnIfNeeded(roomId);
+      scheduleAutoDiscard(roomId);
+    }
   }, 12000);
 }
 
@@ -661,9 +676,10 @@ function advanceTurn(roomId) {
 
   const result = game.nextTurn();
   if (result.ended) {
-    // 留局：莊家留莊（winnerSeat = null）
+    // 留局：清除所有計時器，停止一切 bot 動作
+    clearRoomTimer(roomId);
+    clearAutoDiscard(roomId);
     const progression = handleGameProgression(room, game, null);
-    // 同步 room.players.score（留局無分數變化，但確保一致）
     game.players.forEach(gp => {
       const rp = room.players.find(p => p.userId === gp.userId);
       if (rp) rp.score = gp.score;
