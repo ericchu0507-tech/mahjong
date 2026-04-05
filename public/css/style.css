@@ -24,7 +24,7 @@ body {
    ========================================== */
 #game-container {
   width: 2600px;
-  height: 950px;
+  height: 1050px;
   display: grid;
   grid-template-rows: auto 1fr auto;
   grid-template-columns: 1fr;

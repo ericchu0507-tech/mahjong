@@ -49,7 +49,7 @@ function showScreen(id) {
 // 自動縮放遊戲桌以符合螢幕大小
 // 固定邏輯尺寸（與 CSS 的 width/height 一致，永遠不變）
 const GAME_W = 2600;
-const GAME_H = 950;
+const GAME_H = 1050;
 
 function scaleGameToFit() {
   const gc = document.getElementById('game-container');
