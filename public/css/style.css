@@ -26,7 +26,7 @@ body {
   width: 2600px;
   height: 1050px;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr minmax(215px, auto);
   grid-template-columns: 1fr;
   background: #1a5c1e;
   background-image:
